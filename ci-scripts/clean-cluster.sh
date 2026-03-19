@@ -25,6 +25,15 @@ function delete_deployment() {
         oc delete secret minio-credentials postgresql-credentials unleash-credentials -n $AMBIENT_NAMESPACE --ignore-not-found
         info "Secrets deleted"
     fi
+
+    # Remove CRDs
+    oc delete crd agenticsessions.vteam.ambient-code --ignore-not-found
+    oc delete crd projectsettings.vteam.ambient-code --ignore-not-found
+    oc delete crd rfeworkflows.vteam.ambient-code --ignore-not-found
+
+    # Remove cluster-level RBAC
+    oc delete clusterrole ambient-code-operator --ignore-not-found
+    oc delete clusterrolebinding ambient-code-operator --ignore-not-found
 }
 
 

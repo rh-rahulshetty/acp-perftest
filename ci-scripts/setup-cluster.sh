@@ -48,8 +48,6 @@ function setup() {
     
     # Enable Observability
     make deploy-observability -C $LOCAL_DIR
-    make add-grafana -C $LOCAL_DIR
-    make grafana-dashboard -C $LOCAL_DIR
 }
 
 setup

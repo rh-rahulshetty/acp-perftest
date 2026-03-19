@@ -36,6 +36,14 @@ This repository provides tooling to set up an OpenShift cluster with the Ambient
 ./ci-scripts/setup-cluster.sh
 ```
 
+
+```bash
+# export DELETE_SECRETS=true
+
+./ci-scripts/load-test.sh
+```
+
+
 ```bash
 # export DELETE_SECRETS=true
 

@@ -133,3 +133,4 @@ hack/
 # Personal exports
 *.csv
 workspaces/
+artifacts/
