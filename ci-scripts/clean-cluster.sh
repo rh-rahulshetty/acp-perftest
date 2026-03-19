@@ -6,6 +6,7 @@ set -o errexit
 set -o pipefail
 
 source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/locust.sh"
 
 LOCAL_DIR="${LOCAL_DIR:-workspaces/ambient-code}"
 DELETE_SECRETS="${DELETE_SECRETS:-false}"
@@ -34,6 +35,9 @@ function delete_deployment() {
     # Remove cluster-level RBAC
     oc delete clusterrole ambient-code-operator --ignore-not-found
     oc delete clusterrolebinding ambient-code-operator --ignore-not-found
+
+    # Remove Locust operator
+    uninstall_locust_operator
 }
 
 

@@ -1,0 +1,43 @@
+# ServiceMonitor resources for Prometheus Operator / OpenShift user-workload monitoring.
+#
+# Apply into the test namespace:
+#   envsubst < config/locust-servicemonitor.yaml | kubectl apply -n ${LOCUST_NAMESPACE} -f -
+#
+# Two monitors are created:
+#   1. locust-tests-metrics  – scrapes the exporter sidecar (port 9646) on
+#      master pods when OTel is NOT enabled on the LocustTest CR. The operator
+#      auto-annotates pods with prometheus.io/* but a ServiceMonitor gives the
+#      Prometheus Operator explicit discovery.
+#   2. locust-operator-metrics – scrapes the operator controller-runtime metrics
+#      (port 8080) in the operator namespace.
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: locust-tests-metrics
+  labels:
+    app.kubernetes.io/part-of: locust-k8s-operator
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/managed-by: locust-operator
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: locust-operator-metrics
+  namespace: ${LOCUST_OPERATOR_NAMESPACE}
+  labels:
+    app.kubernetes.io/name: locust-k8s-operator
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: locust-k8s-operator
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s

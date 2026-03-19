@@ -1,0 +1,128 @@
+# Helm values for locust-k8s-operator
+# Ref: https://github.com/AbdelrhmanHamouda/locust-k8s-operator/tree/master/charts/locust-k8s-operator
+#
+# Install with:
+#   helm install locust-operator locust-k8s-operator/locust-k8s-operator \
+#     --namespace locust-system --create-namespace -f config/locust-operator.yaml
+
+# -- Operator image configuration
+image:
+  pullPolicy: IfNotPresent
+
+# -- Operator pod resources
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+# -- HA with leader election (set replicaCount: 1 for single replica)
+replicaCount: 2
+
+leaderElection:
+  enabled: true
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# -- Operator controller-runtime metrics endpoint
+metrics:
+  enabled: true
+  port: 8080
+  secure: false
+
+# =============================================================================
+# Locust Test Pod Configuration (defaults for pods the operator creates)
+# =============================================================================
+
+locustPods:
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+      ephemeralStorage: 50M
+    limits:
+      cpu: 1000m
+      memory: 1024Mi
+      ephemeralStorage: 100M
+
+  masterResources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  workerResources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  affinityInjection: true
+  tolerationsInjection: true
+
+  # Prometheus metrics exporter sidecar (injected into master pods when OTel is
+  # NOT enabled on the LocustTest CR). Exposes /metrics on port 9646.
+  metricsExporter:
+    image: containersol/locust_exporter:v0.5.0
+    port: 9646
+    pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 100m
+        memory: 64Mi
+        ephemeralStorage: 30M
+      limits:
+        cpu: 250m
+        memory: 128Mi
+        ephemeralStorage: 50M
+
+# =============================================================================
+# Optional: OTel Collector (for v2 API OTel mode)
+# Enable this to receive OTLP telemetry from Locust and export to Prometheus.
+# =============================================================================
+
+otelCollector:
+  enabled: true
+  image: otel/opentelemetry-collector-contrib:0.145.0
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  # Pipeline: receive OTLP from Locust pods, export as Prometheus metrics
+  config: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      batch: {}
+    exporters:
+      prometheus:
+        endpoint: 0.0.0.0:8889
+      debug:
+        verbosity: basic
+    service:
+      extensions: [health_check]
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [prometheus, debug]

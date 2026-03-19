@@ -5,6 +5,7 @@ set -o errexit
 set -o pipefail
 
 source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/locust.sh"
 
 # Ambient Code platform repository
 AMBIENT_CODE_GIT="${AMBIENT_CODE_GIT:-https://github.com/ambient-code/platform.git}"
@@ -15,6 +16,28 @@ LOCAL_DIR="${LOCAL_DIR:-workspaces/ambient-code}"
 MANIFESTS_DIR="$LOCAL_DIR/components/manifests"
 
 AMBIENT_NAMESPACE="ambient-code"
+
+function enable_user_workload_monitoring() {
+    info "Enabling user workload monitoring"
+    config_dir=$(mktemp -d)
+    if oc -n openshift-monitoring get cm cluster-monitoring-config; then
+        oc -n openshift-monitoring extract configmap/cluster-monitoring-config --to=$config_dir --keys=config.yaml
+        sed -i '/^enableUserWorkload:/d' $config_dir/config.yaml
+        echo -e "\nenableUserWorkload: true" >> $config_dir/config.yaml
+        oc -n openshift-monitoring set data configmap/cluster-monitoring-config --from-file=$config_dir/config.yaml
+    else
+        cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    enableUserWorkload: true
+EOF
+  fi
+}
 
 
 function setup() {
@@ -47,7 +70,12 @@ function setup() {
     fi
     
     # Enable Observability
+    enable_user_workload_monitoring
     make deploy-observability -C $LOCAL_DIR
+
+    # Deploy Locust operator for load testing
+    install_locust_operator
+    setup_locust_monitoring
 }
 
 setup
