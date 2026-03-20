@@ -97,6 +97,19 @@ cat > "$RUN_ARTIFACTS/test-metadata.json" <<EOF
 EOF
 
 # ---------------------------------------------------------------------------
+# Loadtest auth — read SA token from Secret (created by setup-cluster.sh)
+# ---------------------------------------------------------------------------
+if [[ -z "${AUTH_TOKEN:-}" ]]; then
+    AUTH_TOKEN="$(kubectl get secret loadtest-sa-token -n "$AMBIENT_NAMESPACE" \
+        -o jsonpath='{.data.token}' 2>/dev/null | base64 -d || echo '')"
+    if [[ -z "$AUTH_TOKEN" ]]; then
+        fatal "Failed to read token from secret loadtest-sa-token in $AMBIENT_NAMESPACE. Ensure setup-cluster.sh has been run."
+    fi
+fi
+LOADTEST_SA_IDENTITY="system:serviceaccount:${AMBIENT_NAMESPACE}:${LOADTEST_SA}"
+export AUTH_TOKEN LOADTEST_SA_IDENTITY
+
+# ---------------------------------------------------------------------------
 # Phase 1: Scenario setup
 # ---------------------------------------------------------------------------
 info "=== Scenario: $TEST_SCENARIO ==="

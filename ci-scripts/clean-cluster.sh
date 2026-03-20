@@ -39,6 +39,7 @@ function delete_deployment() {
     # Remove loadtest RBAC
     kubectl delete clusterrolebinding loadtest-sa-admin loadtest-sa-project-creator --ignore-not-found
     kubectl delete clusterrole loadtest-project-creator --ignore-not-found
+    kubectl delete secret loadtest-sa-token -n $AMBIENT_NAMESPACE --ignore-not-found
     kubectl delete sa loadtest-sa -n $AMBIENT_NAMESPACE --ignore-not-found
 
     # Remove Locust operator

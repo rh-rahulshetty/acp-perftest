@@ -84,7 +84,7 @@ function setup() {
 function setup_loadtest_rbac() {
     info "Setting up loadtest service account and RBAC …"
     export AMBIENT_NAMESPACE
-    envsubst '${AMBIENT_NAMESPACE}' < "$PROJECT_ROOT/config/loadtest-rbac.yaml" \
+    envsubst '${AMBIENT_NAMESPACE}' < "config/loadtest-rbac.yaml" \
         | kubectl apply -f -
     info "Loadtest RBAC configured"
 }
