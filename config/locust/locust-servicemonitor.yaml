@@ -8,6 +8,7 @@ metadata:
   namespace: ${LOCUST_NAMESPACE}
   labels:
     app: locust-operator
+    openshift.io/cluster-monitoring: "true"
 spec:
   endpoints:
     - interval: 10s

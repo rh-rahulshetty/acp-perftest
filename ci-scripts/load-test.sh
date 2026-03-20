@@ -195,7 +195,6 @@ spec:
       --spawn-rate ${TEST_SPAWN_RATE}
       --run-time ${TEST_RUN_TIME}
       --csv /tmp/locust-results
-      --headless
   worker:
     command: "--locustfile /lotest/src/${LOCUST_SCRIPT}"
     replicas: ${TEST_WORKERS}
