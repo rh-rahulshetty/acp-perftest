@@ -14,7 +14,7 @@
 # Environment variables:
 #   RUN_ID              Run UUID (required when called standalone)
 #   RUN_ARTIFACTS       Path to this run's artifacts dir (required)
-#   TEST_SCENARIO       Scenario name (default: session-crud)
+#   TEST_SCENARIO       Scenario name (default: session-listing)
 #   MONITORING_COLLECTION_ENABLED  Collect Prometheus metrics (default: true)
 #   OPL_REPO            OPL git repo URL
 
@@ -30,7 +30,7 @@ source "$SCRIPT_DIR/lib.sh"
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-TEST_SCENARIO="${TEST_SCENARIO:-session-crud}"
+TEST_SCENARIO="${TEST_SCENARIO:-session-listing}"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-$PROJECT_ROOT/artifacts}"
 
 # RUN_ARTIFACTS must be set (by load-test.sh or by the user)

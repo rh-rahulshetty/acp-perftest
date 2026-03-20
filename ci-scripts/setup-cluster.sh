@@ -76,6 +76,17 @@ function setup() {
     # Deploy Locust operator for load testing
     install_locust_operator
     setup_locust_monitoring
+
+    # Create loadtest service account and RBAC for API access
+    setup_loadtest_rbac
+}
+
+function setup_loadtest_rbac() {
+    info "Setting up loadtest service account and RBAC …"
+    export AMBIENT_NAMESPACE
+    envsubst '${AMBIENT_NAMESPACE}' < "$PROJECT_ROOT/config/loadtest-rbac.yaml" \
+        | kubectl apply -f -
+    info "Loadtest RBAC configured"
 }
 
 setup

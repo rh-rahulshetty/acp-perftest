@@ -19,7 +19,7 @@
 # stored under artifacts/<run-id>/.
 #
 # Environment variables (all have sensible defaults):
-#   TEST_SCENARIO       Scenario directory name under tests/scenarios/ (default: session-crud)
+#   TEST_SCENARIO       Scenario directory name under tests/scenarios/ (default: session-listing)
 #   LOCUST_SCRIPT       Specific .py file in locust/ to run (default: auto-detect single file)
 #   TEST_USERS          Number of simulated users (default: 10)
 #   TEST_SPAWN_RATE     Users spawned per second (default: 2)
@@ -42,7 +42,7 @@ source "$SCRIPT_DIR/lib.sh"
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-TEST_SCENARIO="${TEST_SCENARIO:-session-crud}"
+TEST_SCENARIO="${TEST_SCENARIO:-session-listing}"
 TEST_USERS="${TEST_USERS:-10}"
 TEST_SPAWN_RATE="${TEST_SPAWN_RATE:-2}"
 TEST_RUN_TIME="${TEST_RUN_TIME:-5m}"
@@ -148,14 +148,9 @@ if [[ "$HAS_LOCUST" == "true" ]]; then
         "${configmap_args[@]}" \
         --dry-run=client -o yaml | kubectl apply -f -
 
-    # Resolve target host
+    # Resolve target host (scenario setup.sh may have already set this)
     if [[ -z "${LOCUST_HOST:-}" ]]; then
-        ROUTE_HOST="$(kubectl get route frontend -n "$AMBIENT_NAMESPACE" -o jsonpath='{.spec.host}' 2>/dev/null || echo '')"
-        if [[ -n "$ROUTE_HOST" ]]; then
-            LOCUST_HOST="https://${ROUTE_HOST}"
-        else
-            LOCUST_HOST="http://$(kubectl get svc public-api-service -n "$AMBIENT_NAMESPACE" -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo 'localhost'):8081"
-        fi
+        LOCUST_HOST="http://backend-service.${AMBIENT_NAMESPACE}.svc.cluster.local:8080"
     fi
     export LOCUST_HOST
     info "Locust target: $LOCUST_HOST"

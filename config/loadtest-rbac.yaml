@@ -1,0 +1,67 @@
+# loadtest-rbac.yaml — ServiceAccount, ClusterRole, and bindings for load testing.
+#
+# Creates a dedicated SA with permissions to:
+#   - Create/delete projects (namespaces)
+#   - Full CRUD on agentic sessions within projects
+#   - RBAC and secrets management within projects
+#
+# The SA token is used as the Bearer token for locust requests.
+# Applied by setup-cluster.sh during cluster setup.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: loadtest-sa
+  namespace: ${AMBIENT_NAMESPACE}
+  labels:
+    app: ambient-loadtest
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: loadtest-project-creator
+  labels:
+    app: ambient-loadtest
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: ["project.openshift.io"]
+    resources: ["projects", "projectrequests"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings", "roles"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["selfsubjectaccessreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: loadtest-sa-admin
+  labels:
+    app: ambient-loadtest
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ambient-project-admin
+subjects:
+  - kind: ServiceAccount
+    name: loadtest-sa
+    namespace: ${AMBIENT_NAMESPACE}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: loadtest-sa-project-creator
+  labels:
+    app: ambient-loadtest
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: loadtest-project-creator
+subjects:
+  - kind: ServiceAccount
+    name: loadtest-sa
+    namespace: ${AMBIENT_NAMESPACE}

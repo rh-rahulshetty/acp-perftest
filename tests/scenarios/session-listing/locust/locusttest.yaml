@@ -1,4 +1,4 @@
-# LocustTest CR template for session-crud scenario.
+# LocustTest CR template for session-listing scenario.
 # Variables are substituted by ci-scripts/load-test.sh via envsubst.
 apiVersion: locust.io/v2
 kind: LocustTest
@@ -13,9 +13,15 @@ spec:
     variables:
       - name: AUTH_TOKEN
         value: "${AUTH_TOKEN}"
+      - name: PROJECT_NAME
+        value: "${PROJECT_NAME}"
+      - name: SESSIONS_TO_CREATE
+        value: "${SESSIONS_TO_CREATE}"
+      - name: LOADTEST_SA_IDENTITY
+        value: "${LOADTEST_SA_IDENTITY}"
   master:
     command: >-
-      --locustfile /lotest/src/session_crud.py
+      --locustfile /lotest/src/session_listing.py
       --host ${LOCUST_HOST}
       --users ${TEST_USERS}
       --spawn-rate ${TEST_SPAWN_RATE}
@@ -23,5 +29,5 @@ spec:
       --csv /tmp/locust-results
       --headless
   worker:
-    command: "--locustfile /lotest/src/session_crud.py"
+    command: "--locustfile /lotest/src/session_listing.py"
     replicas: ${TEST_WORKERS}

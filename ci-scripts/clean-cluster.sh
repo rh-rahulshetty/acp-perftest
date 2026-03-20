@@ -36,6 +36,11 @@ function delete_deployment() {
     oc delete clusterrole ambient-code-operator --ignore-not-found
     oc delete clusterrolebinding ambient-code-operator --ignore-not-found
 
+    # Remove loadtest RBAC
+    kubectl delete clusterrolebinding loadtest-sa-admin loadtest-sa-project-creator --ignore-not-found
+    kubectl delete clusterrole loadtest-project-creator --ignore-not-found
+    kubectl delete sa loadtest-sa -n $AMBIENT_NAMESPACE --ignore-not-found
+
     # Remove Locust operator
     uninstall_locust_operator
 }
