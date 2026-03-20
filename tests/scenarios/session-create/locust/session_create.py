@@ -121,4 +121,4 @@ class SessionCreateUser(HttpUser):
                 except Exception:
                     pass
             else:
-                resp.failure(f"Create failed: {resp.status_code}")
+                resp.failure(f"Create failed: {resp.status_code} {resp.text[:200]}")

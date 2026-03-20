@@ -114,8 +114,13 @@ class SessionListingUser(HttpUser):
     @task
     def list_sessions(self):
         """List all sessions in the project — the primary load target."""
-        self.client.get(
+        with self.client.get(
             self.base,
             headers=self.headers,
             name="GET /agentic-sessions (list)",
-        )
+            catch_response=True,
+        ) as resp:
+            if resp.ok:
+                resp.success()
+            else:
+                resp.failure(f"List failed: {resp.status_code} {resp.text[:200]}")
