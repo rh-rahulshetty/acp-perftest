@@ -1,10 +1,10 @@
 #!/bin/bash
-# setup.sh — Pre-test setup for session-listing scenario.
+# setup.sh — Pre-test setup for session-create scenario.
 #
 # Sourced by ci-scripts/load-test.sh (inherits all exported variables
 # including AUTH_TOKEN, LOADTEST_SA_IDENTITY, LOCUST_HOST).
 
-info "Setting up session-listing scenario …"
+info "Setting up session-create scenario …"
 
 AMBIENT_NAMESPACE="${AMBIENT_NAMESPACE:-ambient-code}"
 
@@ -15,9 +15,7 @@ if [[ -z "${LOCUST_HOST:-}" ]]; then
 fi
 
 # Scenario-specific defaults
-export PROJECT_NAME="${PROJECT_NAME:-session-listing}"
-export SESSIONS_TO_CREATE="${SESSIONS_TO_CREATE:-20}"
+export PROJECT_NAME="${PROJECT_NAME:-session-create}"
 
 info "  LOCUST_HOST          = $LOCUST_HOST"
 info "  PROJECT_NAME         = $PROJECT_NAME"
-info "  SESSIONS_TO_CREATE   = $SESSIONS_TO_CREATE"

@@ -1,0 +1,18 @@
+# cluster_read_config.yaml — Scenario-specific OPL metrics for session-create.
+
+# --- POST /agentic-sessions — primary load target ---
+- name: results.POST_agentic-sessions.locust_requests_avg_response_time
+  monitoring_query: sum(locust_requests_avg_response_time{name="POST /agentic-sessions"})
+  monitoring_step: 15
+- name: results.POST_agentic-sessions.locust_requests_current_rps
+  monitoring_query: sum(locust_requests_current_rps{name="POST /agentic-sessions"})
+  monitoring_step: 15
+- name: results.POST_agentic-sessions.locust_requests_current_fail_per_sec
+  monitoring_query: sum(locust_requests_current_fail_per_sec{name="POST /agentic-sessions"})
+  monitoring_step: 15
+- name: results.POST_agentic-sessions.locust_requests_num_failures
+  monitoring_query: sum(locust_requests_num_failures{name="POST /agentic-sessions"})
+  monitoring_step: 15
+- name: results.POST_agentic-sessions.locust_requests_avg_content_length
+  monitoring_query: sum(locust_requests_avg_content_length{name="POST /agentic-sessions"})
+  monitoring_step: 15

@@ -26,7 +26,7 @@
 #   TEST_RUN_TIME       Duration string, e.g. "5m" (default: 5m)
 #   TEST_WORKERS        Locust worker replicas (default: 2)
 #   LOCUST_NAMESPACE    Namespace where locust operator runs (default: locust-operator)
-#   LOCUST_HOST         Target URL for locust (auto-detected from route/svc if unset)
+#   LOCUST_HOST         Target URL for locust (default: backend-service k8s FQDN)
 #   ARTIFACTS_DIR       Where to store results (default: artifacts)
 #   TEST_DO_CLEANUP     Delete scenario resources after test (default: true)
 
@@ -51,6 +51,7 @@ LOCUST_NAMESPACE="${LOCUST_NAMESPACE:-locust-operator}"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-$PROJECT_ROOT/artifacts}"
 TEST_DO_CLEANUP="${TEST_DO_CLEANUP:-true}"
 AMBIENT_NAMESPACE="${AMBIENT_NAMESPACE:-ambient-code}"
+LOADTEST_SA="${LOADTEST_SA:-loadtest-sa}"
 
 SCENARIOS_DIR="$PROJECT_ROOT/tests/scenarios"
 SCENARIO_DIR="$SCENARIOS_DIR/$TEST_SCENARIO"
