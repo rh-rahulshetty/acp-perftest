@@ -53,10 +53,16 @@ info "Collecting results into $RUN_ARTIFACTS …"
 # ---------------------------------------------------------------------------
 # 1. Collect application logs
 # ---------------------------------------------------------------------------
-info "Collecting application logs …"
+info "Collecting application logs (since test start) …"
+
+METADATA_FILE="$RUN_ARTIFACTS/test-metadata.json"
+LOG_SINCE=""
+if [[ -f "$METADATA_FILE" ]]; then
+    LOG_SINCE="--since-time=$(python3 -c "import json; print(json.load(open('$METADATA_FILE'))['start_ts'])")"
+fi
 
 for deploy in backend-api public-api agentic-operator ambient-api-server frontend; do
-    kubectl logs -n "$AMBIENT_NAMESPACE" "deployment/$deploy" --all-containers --tail=10000 \
+    kubectl logs -n "$AMBIENT_NAMESPACE" "deployment/$deploy" --all-containers $LOG_SINCE \
         > "$RUN_ARTIFACTS/logs/${deploy}.log" 2>/dev/null || true
 done
 
@@ -99,39 +105,70 @@ if is_truthy "$MONITORING_COLLECTION_ENABLED"; then
         fi
         # shellcheck disable=SC1091
         source "$OPL_VENV/bin/activate"
-        pip install --quiet -e "git+${OPL_REPO}#egg=opl" 2>/dev/null || {
-            warning "Failed to install OPL — skipping monitoring collection"
-            deactivate
-        }
 
-        # Determine Prometheus/Thanos endpoint
-        MONITORING_URL="${MONITORING_URL:-}"
-        if [[ -z "$MONITORING_URL" ]]; then
-            MONITORING_URL="https://$(oc get route thanos-querier -n openshift-monitoring -o jsonpath='{.spec.host}' 2>/dev/null || echo '')"
-        fi
-        MONITORING_TOKEN="${MONITORING_TOKEN:-$(oc whoami -t 2>/dev/null || echo '')}"
-
-        # Choose cluster_read_config: scenario-specific if present, else default
-        CLUSTER_READ_CONFIG="$PROJECT_ROOT/config/cluster_read_config.yaml"
-        SCENARIO_READ_CONFIG="$PROJECT_ROOT/tests/scenarios/$TEST_SCENARIO/cluster_read_config.yaml"
-        if [[ -f "$SCENARIO_READ_CONFIG" ]]; then
-            CLUSTER_READ_CONFIG="$SCENARIO_READ_CONFIG"
-        fi
-
-        if [[ -f "$CLUSTER_READ_CONFIG" && -n "$MONITORING_URL" && "$MONITORING_URL" != "https://" ]]; then
-            info "Querying Prometheus ($MONITORING_URL) for metrics …"
-            python3 -m opl.status_data \
-                --status-data-file "$RUN_ARTIFACTS/monitoring/benchmark-data.json" \
-                --config "$CLUSTER_READ_CONFIG" \
-                --monitoring-start "$START_TS" \
-                --monitoring-end "$END_TS" \
-                --monitoring-raw-data-dir "$RUN_ARTIFACTS/monitoring/" \
-                --prometheus-host "$MONITORING_URL" \
-                --prometheus-port 443 \
-                --prometheus-token "$MONITORING_TOKEN" \
-                || warning "OPL monitoring collection returned non-zero"
+        OPL_INSTALLED=false
+        if pip install --quiet "opl-rhcloud-perf-team @ git+${OPL_REPO}"; then
+            OPL_INSTALLED=true
         else
-            warning "Skipping Prometheus collection (missing config or URL)"
+            warning "Failed to install OPL — skipping monitoring collection"
+        fi
+
+        if [[ "$OPL_INSTALLED" == "true" ]]; then
+            # Determine Prometheus/Thanos endpoint
+            MONITORING_URL="${MONITORING_URL:-}"
+            if [[ -z "$MONITORING_URL" ]]; then
+                MHOST=$(kubectl -n openshift-monitoring get route -l app.kubernetes.io/name=thanos-query -o json | jq --raw-output '.items[0].spec.host' 2>/dev/null || echo '')
+                MONITORING_URL="https://${MHOST}"
+            fi
+            MONITORING_TOKEN="${MONITORING_TOKEN:-$(oc whoami -t 2>/dev/null || echo '')}"
+
+            # Convert timestamps to ISO 8601 with seconds precision
+            MSTART=$(date --utc --date "$START_TS" --iso-8601=seconds)
+            MEND=$(date --utc --date "$END_TS" --iso-8601=seconds)
+
+            MONITORING_DATA_FILE="$RUN_ARTIFACTS/monitoring/benchmark-data.json"
+            MONITORING_LOG="$RUN_ARTIFACTS/monitoring/collection.log"
+
+            DEFAULT_CONFIG="$PROJECT_ROOT/config/cluster_read_config.yaml"
+            SCENARIO_CONFIG="$PROJECT_ROOT/tests/scenarios/$TEST_SCENARIO/cluster_read_config.yaml"
+
+            if [[ -n "$MONITORING_URL" && "$MONITORING_URL" != "https://" ]]; then
+                # Always run the default config
+                if [[ -f "$DEFAULT_CONFIG" ]]; then
+                    info "Collecting default metrics ($DEFAULT_CONFIG) …"
+                    status_data.py \
+                        --status-data-file "$MONITORING_DATA_FILE" \
+                        --additional "$DEFAULT_CONFIG" \
+                        --monitoring-start "$MSTART" \
+                        --monitoring-end "$MEND" \
+                        --monitoring-raw-data-dir "$RUN_ARTIFACTS/monitoring/" \
+                        --prometheus-host "$MONITORING_URL" \
+                        --prometheus-port 443 \
+                        --prometheus-token "$MONITORING_TOKEN" \
+                        -d >"$MONITORING_LOG" 2>&1 \
+                        || warning "OPL default config collection returned non-zero"
+                fi
+
+                # Additionally run the scenario-specific config if present
+                if [[ -f "$SCENARIO_CONFIG" ]]; then
+                    info "Collecting scenario metrics ($SCENARIO_CONFIG) …"
+                    status_data.py \
+                        --status-data-file "$MONITORING_DATA_FILE" \
+                        --additional "$SCENARIO_CONFIG" \
+                        --monitoring-start "$MSTART" \
+                        --monitoring-end "$MEND" \
+                        --monitoring-raw-data-dir "$RUN_ARTIFACTS/monitoring/" \
+                        --prometheus-host "$MONITORING_URL" \
+                        --prometheus-port 443 \
+                        --prometheus-token "$MONITORING_TOKEN" \
+                        -d >>"$MONITORING_LOG" 2>&1 \
+                        || warning "OPL scenario config collection returned non-zero"
+                else
+                    info "No scenario-specific cluster_read_config.yaml found for $TEST_SCENARIO"
+                fi
+            else
+                warning "Skipping Prometheus collection (missing URL)"
+            fi
         fi
 
         deactivate 2>/dev/null || true

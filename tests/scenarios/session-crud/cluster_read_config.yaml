@@ -1,0 +1,77 @@
+# cluster_read_config.yaml — Scenario-specific OPL metrics for session-crud.
+#
+# Per-endpoint locust metrics. The "name" label matches the `name=` parameter
+# in the locust task requests defined in locust/session_crud.py.
+
+# --- POST /agentic-sessions ---
+- name: results.POST_agentic-sessions.locust_requests_avg_response_time
+  monitoring_query: sum(locust_requests_avg_response_time{name="POST /agentic-sessions"})
+  monitoring_step: 15
+- name: results.POST_agentic-sessions.locust_requests_current_rps
+  monitoring_query: sum(locust_requests_current_rps{name="POST /agentic-sessions"})
+  monitoring_step: 15
+- name: results.POST_agentic-sessions.locust_requests_current_fail_per_sec
+  monitoring_query: sum(locust_requests_current_fail_per_sec{name="POST /agentic-sessions"})
+  monitoring_step: 15
+- name: results.POST_agentic-sessions.locust_requests_num_failures
+  monitoring_query: sum(locust_requests_num_failures{name="POST /agentic-sessions"})
+  monitoring_step: 15
+- name: results.POST_agentic-sessions.locust_requests_avg_content_length
+  monitoring_query: sum(locust_requests_avg_content_length{name="POST /agentic-sessions"})
+  monitoring_step: 15
+
+# --- GET /agentic-sessions/:name ---
+- name: results.GET_agentic-sessions_name.locust_requests_avg_response_time
+  monitoring_query: sum(locust_requests_avg_response_time{name="GET /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.GET_agentic-sessions_name.locust_requests_current_rps
+  monitoring_query: sum(locust_requests_current_rps{name="GET /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.GET_agentic-sessions_name.locust_requests_current_fail_per_sec
+  monitoring_query: sum(locust_requests_current_fail_per_sec{name="GET /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.GET_agentic-sessions_name.locust_requests_num_failures
+  monitoring_query: sum(locust_requests_num_failures{name="GET /agentic-sessions/:name"})
+  monitoring_step: 15
+
+# --- GET /agentic-sessions (list) ---
+- name: results.GET_agentic-sessions_list.locust_requests_avg_response_time
+  monitoring_query: sum(locust_requests_avg_response_time{name="GET /agentic-sessions (list)"})
+  monitoring_step: 15
+- name: results.GET_agentic-sessions_list.locust_requests_current_rps
+  monitoring_query: sum(locust_requests_current_rps{name="GET /agentic-sessions (list)"})
+  monitoring_step: 15
+- name: results.GET_agentic-sessions_list.locust_requests_current_fail_per_sec
+  monitoring_query: sum(locust_requests_current_fail_per_sec{name="GET /agentic-sessions (list)"})
+  monitoring_step: 15
+- name: results.GET_agentic-sessions_list.locust_requests_num_failures
+  monitoring_query: sum(locust_requests_num_failures{name="GET /agentic-sessions (list)"})
+  monitoring_step: 15
+
+# --- PATCH /agentic-sessions/:name ---
+- name: results.PATCH_agentic-sessions_name.locust_requests_avg_response_time
+  monitoring_query: sum(locust_requests_avg_response_time{name="PATCH /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.PATCH_agentic-sessions_name.locust_requests_current_rps
+  monitoring_query: sum(locust_requests_current_rps{name="PATCH /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.PATCH_agentic-sessions_name.locust_requests_current_fail_per_sec
+  monitoring_query: sum(locust_requests_current_fail_per_sec{name="PATCH /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.PATCH_agentic-sessions_name.locust_requests_num_failures
+  monitoring_query: sum(locust_requests_num_failures{name="PATCH /agentic-sessions/:name"})
+  monitoring_step: 15
+
+# --- DELETE /agentic-sessions/:name ---
+- name: results.DELETE_agentic-sessions_name.locust_requests_avg_response_time
+  monitoring_query: sum(locust_requests_avg_response_time{name="DELETE /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.DELETE_agentic-sessions_name.locust_requests_current_rps
+  monitoring_query: sum(locust_requests_current_rps{name="DELETE /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.DELETE_agentic-sessions_name.locust_requests_current_fail_per_sec
+  monitoring_query: sum(locust_requests_current_fail_per_sec{name="DELETE /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.DELETE_agentic-sessions_name.locust_requests_num_failures
+  monitoring_query: sum(locust_requests_num_failures{name="DELETE /agentic-sessions/:name"})
+  monitoring_step: 15
