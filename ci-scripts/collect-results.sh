@@ -2,16 +2,19 @@
 #
 # collect-results.sh — Collect benchmark results, cluster metrics, and logs.
 #
+# Typically called by load-test.sh at the end of a run, but can also be
+# invoked standalone if you pass the right env vars.
+#
 # Gathers:
-#   1. Locust CSV stats + logs (already in artifacts from load-test.sh)
-#   2. Application pod logs (backend, public-api, operator)
+#   1. Application pod logs (backend, public-api, operator, etc.)
+#   2. Cluster info (nodes, versions, resource usage)
 #   3. Prometheus metrics via OPL cluster_read
-#   4. Cluster info (nodes, versions, resource usage)
-#   5. Produces a consolidated benchmark JSON
+#   4. Consolidated benchmark JSON
 #
 # Environment variables:
+#   RUN_ID              Run UUID (required when called standalone)
+#   RUN_ARTIFACTS       Path to this run's artifacts dir (required)
 #   TEST_SCENARIO       Scenario name (default: session-crud)
-#   ARTIFACTS_DIR       Base artifacts dir (default: artifacts)
 #   MONITORING_COLLECTION_ENABLED  Collect Prometheus metrics (default: true)
 #   OPL_REPO            OPL git repo URL
 
@@ -29,13 +32,23 @@ source "$SCRIPT_DIR/lib.sh"
 # ---------------------------------------------------------------------------
 TEST_SCENARIO="${TEST_SCENARIO:-session-crud}"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-$PROJECT_ROOT/artifacts}"
-SCENARIO_ARTIFACTS="$ARTIFACTS_DIR/$TEST_SCENARIO"
+
+# RUN_ARTIFACTS must be set (by load-test.sh or by the user)
+if [[ -z "${RUN_ARTIFACTS:-}" ]]; then
+    if [[ -n "${RUN_ID:-}" ]]; then
+        RUN_ARTIFACTS="$ARTIFACTS_DIR/$RUN_ID"
+    else
+        fatal "RUN_ARTIFACTS (or RUN_ID) must be set — pass the run's artifact directory"
+    fi
+fi
+
 MONITORING_COLLECTION_ENABLED="${MONITORING_COLLECTION_ENABLED:-true}"
 OPL_REPO="${OPL_REPO:-https://github.com/redhat-performance/opl.git}"
-
 AMBIENT_NAMESPACE="${AMBIENT_NAMESPACE:-ambient-code}"
 
-mkdir -p "$SCENARIO_ARTIFACTS/monitoring" "$SCENARIO_ARTIFACTS/logs" "$SCENARIO_ARTIFACTS/cluster-info"
+mkdir -p "$RUN_ARTIFACTS/monitoring" "$RUN_ARTIFACTS/logs" "$RUN_ARTIFACTS/cluster-info"
+
+info "Collecting results into $RUN_ARTIFACTS …"
 
 # ---------------------------------------------------------------------------
 # 1. Collect application logs
@@ -44,7 +57,7 @@ info "Collecting application logs …"
 
 for deploy in backend-api public-api agentic-operator ambient-api-server frontend; do
     kubectl logs -n "$AMBIENT_NAMESPACE" "deployment/$deploy" --all-containers --tail=10000 \
-        > "$SCENARIO_ARTIFACTS/logs/${deploy}.log" 2>/dev/null || true
+        > "$RUN_ARTIFACTS/logs/${deploy}.log" 2>/dev/null || true
 done
 
 # ---------------------------------------------------------------------------
@@ -52,15 +65,14 @@ done
 # ---------------------------------------------------------------------------
 info "Collecting cluster info …"
 
-kubectl get nodes -o json > "$SCENARIO_ARTIFACTS/cluster-info/nodes.json" 2>/dev/null || true
-kubectl get pods -n "$AMBIENT_NAMESPACE" -o json > "$SCENARIO_ARTIFACTS/cluster-info/pods.json" 2>/dev/null || true
-kubectl top nodes > "$SCENARIO_ARTIFACTS/cluster-info/node-usage.txt" 2>/dev/null || true
-kubectl top pods -n "$AMBIENT_NAMESPACE" > "$SCENARIO_ARTIFACTS/cluster-info/pod-usage.txt" 2>/dev/null || true
-kubectl version -o json > "$SCENARIO_ARTIFACTS/cluster-info/k8s-version.json" 2>/dev/null || true
+kubectl get nodes -o json > "$RUN_ARTIFACTS/cluster-info/nodes.json" 2>/dev/null || true
+kubectl get pods -n "$AMBIENT_NAMESPACE" -o json > "$RUN_ARTIFACTS/cluster-info/pods.json" 2>/dev/null || true
+kubectl top nodes > "$RUN_ARTIFACTS/cluster-info/node-usage.txt" 2>/dev/null || true
+kubectl top pods -n "$AMBIENT_NAMESPACE" > "$RUN_ARTIFACTS/cluster-info/pod-usage.txt" 2>/dev/null || true
+kubectl version -o json > "$RUN_ARTIFACTS/cluster-info/k8s-version.json" 2>/dev/null || true
 
-# Collect AgenticSession CRs if they exist
 kubectl get agenticsessions -n "$AMBIENT_NAMESPACE" -o json \
-    > "$SCENARIO_ARTIFACTS/cluster-info/agenticsessions.json" 2>/dev/null || true
+    > "$RUN_ARTIFACTS/cluster-info/agenticsessions.json" 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # 3. Collect Prometheus monitoring data via OPL
@@ -68,7 +80,7 @@ kubectl get agenticsessions -n "$AMBIENT_NAMESPACE" -o json \
 if is_truthy "$MONITORING_COLLECTION_ENABLED"; then
     info "Collecting monitoring data via OPL …"
 
-    METADATA_FILE="$SCENARIO_ARTIFACTS/test-metadata.json"
+    METADATA_FILE="$RUN_ARTIFACTS/test-metadata.json"
     if [[ ! -f "$METADATA_FILE" ]]; then
         warning "test-metadata.json not found — skipping monitoring collection"
     else
@@ -109,11 +121,11 @@ if is_truthy "$MONITORING_COLLECTION_ENABLED"; then
         if [[ -f "$CLUSTER_READ_CONFIG" && -n "$MONITORING_URL" && "$MONITORING_URL" != "https://" ]]; then
             info "Querying Prometheus ($MONITORING_URL) for metrics …"
             python3 -m opl.status_data \
-                --status-data-file "$SCENARIO_ARTIFACTS/monitoring/benchmark-data.json" \
+                --status-data-file "$RUN_ARTIFACTS/monitoring/benchmark-data.json" \
                 --config "$CLUSTER_READ_CONFIG" \
                 --monitoring-start "$START_TS" \
                 --monitoring-end "$END_TS" \
-                --monitoring-raw-data-dir "$SCENARIO_ARTIFACTS/monitoring/" \
+                --monitoring-raw-data-dir "$RUN_ARTIFACTS/monitoring/" \
                 --prometheus-host "$MONITORING_URL" \
                 --prometheus-port 443 \
                 --prometheus-token "$MONITORING_TOKEN" \
@@ -134,9 +146,9 @@ fi
 info "Building benchmark JSON …"
 
 python3 "$PROJECT_ROOT/tools/build-benchmark-json.py" \
-    --artifacts-dir "$SCENARIO_ARTIFACTS" \
-    --output "$SCENARIO_ARTIFACTS/benchmark.json" \
+    --artifacts-dir "$RUN_ARTIFACTS" \
+    --output "$RUN_ARTIFACTS/benchmark.json" \
     || warning "build-benchmark-json.py failed — partial results may be available"
 
-info "=== Results collected in: $SCENARIO_ARTIFACTS ==="
-ls -lh "$SCENARIO_ARTIFACTS/"
+info "=== Results collected in: $RUN_ARTIFACTS ==="
+ls -lh "$RUN_ARTIFACTS/"

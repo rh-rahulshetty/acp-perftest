@@ -14,6 +14,10 @@
 # If the scenario has no locust/ directory, only setup.sh and teardown.sh run
 # (useful for non-locust scenarios — e.g. shell-based benchmarks, operator stress).
 #
+# Each run gets a unique RUN_ID (UUID). A short form (first 8 chars) is used
+# for Kubernetes resource names (ConfigMaps, LocustTest CRs). Artifacts are
+# stored under artifacts/<run-id>/.
+#
 # Environment variables (all have sensible defaults):
 #   TEST_SCENARIO       Scenario directory name under tests/scenarios/ (default: session-crud)
 #   LOCUST_SCRIPT       Specific .py file in locust/ to run (default: auto-detect single file)
@@ -60,14 +64,26 @@ HAS_LOCUST=false
 [[ -d "$LOCUST_DIR" ]] && HAS_LOCUST=true
 
 # ---------------------------------------------------------------------------
-# Prepare artifacts
+# Generate run ID
 # ---------------------------------------------------------------------------
-SCENARIO_ARTIFACTS="$ARTIFACTS_DIR/$TEST_SCENARIO"
-mkdir -p "$SCENARIO_ARTIFACTS"
+RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+RUN_ID_SHORT="${RUN_ID:0:8}"
+
+export RUN_ID RUN_ID_SHORT
+
+info "Run ID: $RUN_ID (short: $RUN_ID_SHORT)"
+
+# ---------------------------------------------------------------------------
+# Prepare artifacts — artifacts/<run-id>/
+# ---------------------------------------------------------------------------
+RUN_ARTIFACTS="$ARTIFACTS_DIR/$RUN_ID"
+mkdir -p "$RUN_ARTIFACTS"
 
 # Record test metadata
-cat > "$SCENARIO_ARTIFACTS/test-metadata.json" <<EOF
+cat > "$RUN_ARTIFACTS/test-metadata.json" <<EOF
 {
+  "run_id": "$RUN_ID",
+  "run_id_short": "$RUN_ID_SHORT",
   "scenario": "$TEST_SCENARIO",
   "has_locust": $HAS_LOCUST,
   "users": $TEST_USERS,
@@ -87,7 +103,7 @@ info "=== Scenario: $TEST_SCENARIO ==="
 if [[ -f "$SCENARIO_DIR/setup.sh" ]]; then
     info "Running scenario setup …"
     export TEST_SCENARIO TEST_USERS TEST_SPAWN_RATE TEST_RUN_TIME TEST_WORKERS
-    export LOCUST_NAMESPACE ARTIFACTS_DIR SCENARIO_ARTIFACTS AMBIENT_NAMESPACE
+    export LOCUST_NAMESPACE ARTIFACTS_DIR RUN_ARTIFACTS AMBIENT_NAMESPACE
     export PROJECT_ROOT SCENARIO_DIR LOCUST_DIR HAS_LOCUST
     source "$SCENARIO_DIR/setup.sh"
 fi
@@ -99,7 +115,6 @@ if [[ "$HAS_LOCUST" == "true" ]]; then
     # Resolve which locust script to run
     LOCUST_SCRIPT="${LOCUST_SCRIPT:-}"
     if [[ -z "$LOCUST_SCRIPT" ]]; then
-        # Auto-detect: if only one .py file, use it; otherwise require LOCUST_SCRIPT
         py_files=("$LOCUST_DIR"/*.py)
         if [[ ${#py_files[@]} -eq 1 && -f "${py_files[0]}" ]]; then
             LOCUST_SCRIPT="$(basename "${py_files[0]}")"
@@ -115,14 +130,15 @@ if [[ "$HAS_LOCUST" == "true" ]]; then
         fatal "Locust script not found: $LOCUST_SCRIPT_PATH"
     fi
 
-    CONFIGMAP_NAME="locust.${TEST_SCENARIO}"
-    LOCUST_TEST_NAME="${TEST_SCENARIO}"
+    # Resource names include short UUID to avoid collisions and track runs
+    CONFIGMAP_NAME="locust.${TEST_SCENARIO}.${RUN_ID_SHORT}"
+    LOCUST_TEST_NAME="${TEST_SCENARIO}-${RUN_ID_SHORT}"
     LOCUST_CR_TEMPLATE="$LOCUST_DIR/locusttest.yaml"
 
     export CONFIGMAP_NAME LOCUST_TEST_NAME LOCUST_SCRIPT
 
-    # Build ConfigMap from all .py files in locust/ (the operator mounts them all)
-    info "Creating ConfigMap '$CONFIGMAP_NAME' from $LOCUST_DIR/ …"
+    # Build ConfigMap from all .py files in locust/
+    info "Creating ConfigMap '$CONFIGMAP_NAME' in namespace '$LOCUST_NAMESPACE' …"
     configmap_args=()
     for f in "$LOCUST_DIR"/*.py; do
         [[ -f "$f" ]] && configmap_args+=(--from-file="$(basename "$f")=$f")
@@ -145,7 +161,7 @@ if [[ "$HAS_LOCUST" == "true" ]]; then
     info "Locust target: $LOCUST_HOST"
     info "Locust script: $LOCUST_SCRIPT"
 
-    # Apply LocustTest CR
+    # Apply LocustTest CR — always in LOCUST_NAMESPACE (ServiceMonitor lives here)
     if [[ -f "$LOCUST_CR_TEMPLATE" ]]; then
         info "Applying custom LocustTest CR from $LOCUST_CR_TEMPLATE …"
         export TEST_USERS TEST_SPAWN_RATE TEST_RUN_TIME TEST_WORKERS LOCUST_NAMESPACE
@@ -178,32 +194,41 @@ EOCR
     fi
 
     # -------------------------------------------------------------------
-    # Phase 3: Wait for test completion
+    # Phase 3: Wait for locust master pod to appear
     # -------------------------------------------------------------------
-    info "Waiting for load test to complete (timeout: ${TEST_RUN_TIME} + 120s buffer) …"
-    RUN_SECONDS=$("$PROJECT_ROOT/tools/parse-duration.sh" "$TEST_RUN_TIME")
-    TIMEOUT_SECONDS=$((RUN_SECONDS + 120))
+    MASTER_LABEL="performance-test-pod-name=${LOCUST_TEST_NAME}-master"
 
-    if ! "$PROJECT_ROOT/tools/wait-for-locust.sh" "$LOCUST_TEST_NAME" "$LOCUST_NAMESPACE" "$TIMEOUT_SECONDS"; then
-        warning "Load test did not complete within timeout — collecting partial results"
-    fi
+    info "Waiting for locust master pod to start …"
+    WAIT_TIMEOUT=$(date -d "120 seconds" "+%s")
+    while [[ -z "$(kubectl get pods -n "$LOCUST_NAMESPACE" -l "$MASTER_LABEL" -o name 2>/dev/null)" ]]; do
+        if [[ "$(date "+%s")" -gt "$WAIT_TIMEOUT" ]]; then
+            fatal "Timeout waiting for locust master pod to appear"
+        fi
+        sleep 5
+    done
+
+    kubectl wait -n "$LOCUST_NAMESPACE" --for=condition=Ready=true \
+        $(kubectl get pods -n "$LOCUST_NAMESPACE" -l "$MASTER_LABEL" -o name)
 
     # -------------------------------------------------------------------
-    # Phase 4: Extract results from locust master
+    # Phase 4: Follow master logs until container exits
     # -------------------------------------------------------------------
-    info "Extracting results from locust master pod …"
-    MASTER_POD=$(kubectl get pods -n "$LOCUST_NAMESPACE" \
-        -l "locust-test=$LOCUST_TEST_NAME,role=master" \
+    info "Following locust master logs (test will block until completion) …"
+    kubectl logs -n "$LOCUST_NAMESPACE" -f -l "$MASTER_LABEL" 2>&1 \
+        | tee "$RUN_ARTIFACTS/locust-master.log"
+
+    # -------------------------------------------------------------------
+    # Phase 5: Extract CSV results from locust master
+    # -------------------------------------------------------------------
+    info "Extracting CSV results from locust master pod …"
+    MASTER_POD=$(kubectl get pods -n "$LOCUST_NAMESPACE" -l "$MASTER_LABEL" \
         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
 
     if [[ -n "$MASTER_POD" ]]; then
         for suffix in stats.csv stats_history.csv failures.csv exceptions.csv; do
             kubectl cp "$LOCUST_NAMESPACE/$MASTER_POD:/tmp/locust-results_${suffix}" \
-                "$SCENARIO_ARTIFACTS/locust_${suffix}" 2>/dev/null || true
+                "$RUN_ARTIFACTS/locust_${suffix}" 2>/dev/null || true
         done
-
-        kubectl logs "$MASTER_POD" -n "$LOCUST_NAMESPACE" \
-            > "$SCENARIO_ARTIFACTS/locust-master.log" 2>/dev/null || true
     fi
 else
     info "No locust/ directory — skipping locust deployment"
@@ -217,15 +242,15 @@ info "Test ended at $END_TS"
 
 python3 -c "
 import json
-with open('$SCENARIO_ARTIFACTS/test-metadata.json') as f:
+with open('$RUN_ARTIFACTS/test-metadata.json') as f:
     d = json.load(f)
 d['end_ts'] = '$END_TS'
-with open('$SCENARIO_ARTIFACTS/test-metadata.json', 'w') as f:
+with open('$RUN_ARTIFACTS/test-metadata.json', 'w') as f:
     json.dump(d, f, indent=2)
 "
 
 # ---------------------------------------------------------------------------
-# Phase 5: Scenario teardown
+# Phase 6: Scenario teardown
 # ---------------------------------------------------------------------------
 if [[ -f "$SCENARIO_DIR/teardown.sh" ]]; then
     info "Running scenario teardown …"
@@ -238,4 +263,13 @@ if is_truthy "$TEST_DO_CLEANUP" && [[ "$HAS_LOCUST" == "true" ]]; then
     kubectl delete configmap "$CONFIGMAP_NAME" -n "$LOCUST_NAMESPACE" --ignore-not-found
 fi
 
-info "=== Load test complete. Artifacts in: $SCENARIO_ARTIFACTS ==="
+# ---------------------------------------------------------------------------
+# Phase 7: Collect results
+# ---------------------------------------------------------------------------
+info "Collecting results …"
+export RUN_ID RUN_ARTIFACTS TEST_SCENARIO
+"$SCRIPT_DIR/collect-results.sh"
+
+info "=== Load test complete ==="
+info "  Run ID:    $RUN_ID"
+info "  Artifacts: $RUN_ARTIFACTS"

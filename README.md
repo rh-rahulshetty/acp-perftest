@@ -45,7 +45,6 @@ export TEST_RUN_TIME=5m
 export TEST_WORKERS=3
 
 ./ci-scripts/load-test.sh
-./ci-scripts/collect-results.sh
 ```
 
 

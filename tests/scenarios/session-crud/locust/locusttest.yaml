@@ -9,12 +9,11 @@ spec:
   image: locustio/locust:2.43.3
   testFiles:
     configMapRef: ${CONFIGMAP_NAME}
-  master:
-    env:
-      - name: PROJECT_NAME
-        value: "${PROJECT_NAME}"
+  env:
+    variables:
       - name: AUTH_TOKEN
         value: "${AUTH_TOKEN}"
+  master:
     command: >-
       --locustfile /lotest/src/session_crud.py
       --host ${LOCUST_HOST}
@@ -24,10 +23,5 @@ spec:
       --csv /tmp/locust-results
       --headless
   worker:
-    env:
-      - name: PROJECT_NAME
-        value: "${PROJECT_NAME}"
-      - name: AUTH_TOKEN
-        value: "${AUTH_TOKEN}"
     command: "--locustfile /lotest/src/session_crud.py"
     replicas: ${TEST_WORKERS}
