@@ -1,0 +1,370 @@
+# cluster_read_config.yaml — OPL configuration for collecting cluster metrics.
+#
+# Used by ci-scripts/collect-results.sh via `opl.status_data`.
+# Queries Prometheus/Thanos for key metrics during the load test window.
+#
+# Naming convention:
+#   measurements.<component>.<metric>    — time-series monitoring data
+#   results.<endpoint>.<metric>          — locust per-endpoint results
+#   metadata.<category>.<key>            — cluster/env metadata
+#
+# Scenarios can provide their own cluster_read_config.yaml to add
+# scenario-specific metrics (e.g. additional endpoints).
+
+# ============================================================================
+# Cluster-level resource metrics
+# ============================================================================
+
+- name: measurements.cluster.cpu_usage_rate
+  monitoring_query: sum(node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate{cluster=""})
+  monitoring_step: 15
+
+- name: measurements.cluster.workers_avg_cpu_pct
+  monitoring_query: |
+    sum(rate(node_cpu_seconds_total{mode!="idle"}[5m])
+      * on(instance) group_left(role)
+        label_replace(kube_node_role{role="worker"}, "instance", "$1", "node", "(.+)"))
+    / count(node_cpu_seconds_total{mode="idle"}
+      * on(instance) group_left(role)
+        label_replace(kube_node_role{role="worker"}, "instance", "$1", "node", "(.+)"))
+    * 100
+  monitoring_step: 15
+
+- name: measurements.cluster.memory_rss_total
+  monitoring_query: sum(container_memory_rss{job="kubelet", metrics_path="/metrics/cadvisor", cluster="", container!=""})
+  monitoring_step: 15
+
+- name: measurements.cluster.pod_count
+  monitoring_query: count(kube_pod_info)
+  monitoring_step: 15
+
+- name: measurements.cluster.running_pods_on_workers
+  monitoring_query: >-
+    count(kube_pod_info
+      * on(node) group_left(role) kube_node_role{role="worker"}
+      and on(pod, namespace)
+        (kube_pod_status_phase{job="kube-state-metrics", phase="Running"} > 0))
+  monitoring_step: 15
+
+- name: measurements.cluster.worker_node_count
+  monitoring_query: count(kube_node_role{role="worker"})
+  monitoring_step: 15
+
+- name: measurements.cluster.scheduler_pending_pods
+  monitoring_query: sum(scheduler_pending_pods)
+  monitoring_step: 15
+
+- name: measurements.cluster.network_bytes_total
+  monitoring_query: >-
+    sum(irate(container_network_receive_bytes_total{cluster="",namespace=~".*"}[5m]))
+    + sum(irate(container_network_transmit_bytes_total{cluster="",namespace=~".*"}[5m]))
+  monitoring_step: 15
+
+- name: measurements.cluster.disk_throughput_total
+  monitoring_query: >-
+    sum(rate(container_fs_reads_bytes_total{id!="", device=~"(/dev.+)|mmcblk.p.+|nvme.+|rbd.+|sd.+|vd.+|xvd.+|dm-.+|dasd.+", cluster=""}[5m])
+    + rate(container_fs_writes_bytes_total{id!="", device=~"(/dev.+)|mmcblk.p.+|nvme.+|rbd.+|sd.+|vd.+|xvd.+|dm-.+|dasd.+", cluster=""}[5m]))
+  monitoring_step: 15
+
+
+# ============================================================================
+# API server and etcd
+# ============================================================================
+
+- name: measurements.apiserver.request_total_rate
+  monitoring_query: sum(rate(apiserver_request_total[5m]))
+  monitoring_step: 15
+
+- name: measurements.etcd.request_duration_avg
+  monitoring_query: sum(rate(etcd_request_duration_seconds_sum[5m])) / sum(rate(etcd_request_duration_seconds_count[5m]))
+  monitoring_step: 15
+
+- name: measurements.etcd.db_total_size_bytes
+  monitoring_query: avg(etcd_mvcc_db_total_size_in_bytes)
+  monitoring_step: 15
+
+- name: measurements.etcd.db_in_use_bytes
+  monitoring_query: avg(etcd_mvcc_db_total_size_in_use_in_bytes)
+  monitoring_step: 15
+
+
+# ============================================================================
+# Ambient Code Platform (ACP) pod-level metrics — ambient-code namespace
+# ============================================================================
+
+# --- backend-api ---
+- name: measurements.ambient.backend-api.cpu
+  monitoring_query: sum(pod:container_cpu_usage:sum{namespace='ambient-code', pod=~'backend-api.*'})
+  monitoring_step: 15
+- name: measurements.ambient.backend-api.memory
+  monitoring_query: sum(container_memory_usage_bytes{namespace='ambient-code', pod=~'backend-api.*', container!='POD', container!=''})
+  monitoring_step: 15
+- name: measurements.ambient.backend-api.network_throughput
+  monitoring_query: >-
+    sum(rate(container_network_transmit_bytes_total{namespace='ambient-code', pod=~'backend-api.*'}[60s])
+    + rate(container_network_receive_bytes_total{namespace='ambient-code', pod=~'backend-api.*'}[60s]))
+  monitoring_step: 60
+- name: measurements.ambient.backend-api.restarts
+  monitoring_query: sum(kube_pod_container_status_restarts_total{namespace='ambient-code', pod=~'backend-api.*'})
+  monitoring_step: 15
+
+# --- public-api ---
+- name: measurements.ambient.public-api.cpu
+  monitoring_query: sum(pod:container_cpu_usage:sum{namespace='ambient-code', pod=~'public-api.*'})
+  monitoring_step: 15
+- name: measurements.ambient.public-api.memory
+  monitoring_query: sum(container_memory_usage_bytes{namespace='ambient-code', pod=~'public-api.*', container!='POD', container!=''})
+  monitoring_step: 15
+- name: measurements.ambient.public-api.network_throughput
+  monitoring_query: >-
+    sum(rate(container_network_transmit_bytes_total{namespace='ambient-code', pod=~'public-api.*'}[60s])
+    + rate(container_network_receive_bytes_total{namespace='ambient-code', pod=~'public-api.*'}[60s]))
+  monitoring_step: 60
+- name: measurements.ambient.public-api.restarts
+  monitoring_query: sum(kube_pod_container_status_restarts_total{namespace='ambient-code', pod=~'public-api.*'})
+  monitoring_step: 15
+
+# --- agentic-operator ---
+- name: measurements.ambient.agentic-operator.cpu
+  monitoring_query: sum(pod:container_cpu_usage:sum{namespace='ambient-code', pod=~'agentic-operator.*'})
+  monitoring_step: 15
+- name: measurements.ambient.agentic-operator.memory
+  monitoring_query: sum(container_memory_usage_bytes{namespace='ambient-code', pod=~'agentic-operator.*', container!='POD', container!=''})
+  monitoring_step: 15
+- name: measurements.ambient.agentic-operator.restarts
+  monitoring_query: sum(kube_pod_container_status_restarts_total{namespace='ambient-code', pod=~'agentic-operator.*'})
+  monitoring_step: 15
+
+# --- ambient-api-server ---
+- name: measurements.ambient.ambient-api-server.cpu
+  monitoring_query: sum(pod:container_cpu_usage:sum{namespace='ambient-code', pod=~'ambient-api-server-[^d].*'})
+  monitoring_step: 15
+- name: measurements.ambient.ambient-api-server.memory
+  monitoring_query: sum(container_memory_usage_bytes{namespace='ambient-code', pod=~'ambient-api-server-[^d].*', container!='POD', container!=''})
+  monitoring_step: 15
+- name: measurements.ambient.ambient-api-server.restarts
+  monitoring_query: sum(kube_pod_container_status_restarts_total{namespace='ambient-code', pod=~'ambient-api-server-[^d].*'})
+  monitoring_step: 15
+
+# --- ambient-api-server-db (postgres) ---
+- name: measurements.ambient.ambient-api-server-db.cpu
+  monitoring_query: sum(pod:container_cpu_usage:sum{namespace='ambient-code', pod=~'ambient-api-server-db.*'})
+  monitoring_step: 15
+- name: measurements.ambient.ambient-api-server-db.memory
+  monitoring_query: sum(container_memory_usage_bytes{namespace='ambient-code', pod=~'ambient-api-server-db.*', container!='POD', container!=''})
+  monitoring_step: 15
+
+# --- frontend ---
+- name: measurements.ambient.frontend.cpu
+  monitoring_query: sum(pod:container_cpu_usage:sum{namespace='ambient-code', pod=~'frontend.*'})
+  monitoring_step: 15
+- name: measurements.ambient.frontend.memory
+  monitoring_query: sum(container_memory_usage_bytes{namespace='ambient-code', pod=~'frontend.*', container!='POD', container!=''})
+  monitoring_step: 15
+
+# --- postgresql ---
+- name: measurements.ambient.postgresql.cpu
+  monitoring_query: sum(pod:container_cpu_usage:sum{namespace='ambient-code', pod=~'postgresql.*'})
+  monitoring_step: 15
+- name: measurements.ambient.postgresql.memory
+  monitoring_query: sum(container_memory_usage_bytes{namespace='ambient-code', pod=~'postgresql.*', container!='POD', container!=''})
+  monitoring_step: 15
+
+# --- minio ---
+- name: measurements.ambient.minio.cpu
+  monitoring_query: sum(pod:container_cpu_usage:sum{namespace='ambient-code', pod=~'minio.*'})
+  monitoring_step: 15
+- name: measurements.ambient.minio.memory
+  monitoring_query: sum(container_memory_usage_bytes{namespace='ambient-code', pod=~'minio.*', container!='POD', container!=''})
+  monitoring_step: 15
+
+# --- unleash ---
+- name: measurements.ambient.unleash.cpu
+  monitoring_query: sum(pod:container_cpu_usage:sum{namespace='ambient-code', pod=~'unleash.*'})
+  monitoring_step: 15
+- name: measurements.ambient.unleash.memory
+  monitoring_query: sum(container_memory_usage_bytes{namespace='ambient-code', pod=~'unleash.*', container!='POD', container!=''})
+  monitoring_step: 15
+
+# --- otel-collector ---
+- name: measurements.ambient.otel-collector.cpu
+  monitoring_query: sum(pod:container_cpu_usage:sum{namespace='ambient-code', pod=~'otel-collector.*'})
+  monitoring_step: 15
+- name: measurements.ambient.otel-collector.memory
+  monitoring_query: sum(container_memory_usage_bytes{namespace='ambient-code', pod=~'otel-collector.*', container!='POD', container!=''})
+  monitoring_step: 15
+
+# --- Aggregate ACP namespace ---
+- name: measurements.ambient.namespace.cpu_total
+  monitoring_query: sum(pod:container_cpu_usage:sum{namespace='ambient-code'})
+  monitoring_step: 15
+- name: measurements.ambient.namespace.memory_total
+  monitoring_query: sum(container_memory_usage_bytes{namespace='ambient-code', container!='POD', container!=''})
+  monitoring_step: 15
+- name: measurements.ambient.namespace.pod_count
+  monitoring_query: count(kube_pod_info{namespace='ambient-code'})
+  monitoring_step: 15
+
+
+# ============================================================================
+# Locust global metrics (from locust exporter / ServiceMonitor)
+# ============================================================================
+
+- name: results.locust.requests_fail_ratio
+  monitoring_query: locust_requests_fail_ratio
+  monitoring_step: 15
+
+- name: results.locust.users
+  monitoring_query: locust_users
+  monitoring_step: 15
+
+- name: results.locust.requests_current_rps_total
+  monitoring_query: sum(locust_requests_current_rps)
+  monitoring_step: 15
+
+- name: results.locust.requests_current_fail_per_sec_total
+  monitoring_query: sum(locust_requests_current_fail_per_sec)
+  monitoring_step: 15
+
+- name: results.locust.requests_avg_response_time_total
+  monitoring_query: avg(locust_requests_avg_response_time)
+  monitoring_step: 15
+
+- name: results.locust.requests_num_requests_total
+  monitoring_query: sum(locust_requests_num_requests)
+  monitoring_step: 15
+
+- name: results.locust.requests_num_failures_total
+  monitoring_query: sum(locust_requests_num_failures)
+  monitoring_step: 15
+
+- name: results.locust.requests_avg_content_length_total
+  monitoring_query: avg(locust_requests_avg_content_length)
+  monitoring_step: 15
+
+
+# ============================================================================
+# Locust per-endpoint metrics
+#
+# Each endpoint used in locust test scripts gets its own set of metrics.
+# The "name" label matches the `name=` parameter in locust task requests.
+#
+# To add metrics for a new endpoint, copy one block and change the
+# name filter and metric name prefix.
+# Scenario-specific cluster_read_config.yaml can add more endpoints.
+# ============================================================================
+
+# --- POST /agentic-sessions ---
+- name: results.POST_agentic-sessions.locust_requests_avg_response_time
+  monitoring_query: sum(locust_requests_avg_response_time{name="POST /agentic-sessions"})
+  monitoring_step: 15
+- name: results.POST_agentic-sessions.locust_requests_current_rps
+  monitoring_query: sum(locust_requests_current_rps{name="POST /agentic-sessions"})
+  monitoring_step: 15
+- name: results.POST_agentic-sessions.locust_requests_current_fail_per_sec
+  monitoring_query: sum(locust_requests_current_fail_per_sec{name="POST /agentic-sessions"})
+  monitoring_step: 15
+- name: results.POST_agentic-sessions.locust_requests_num_failures
+  monitoring_query: sum(locust_requests_num_failures{name="POST /agentic-sessions"})
+  monitoring_step: 15
+- name: results.POST_agentic-sessions.locust_requests_avg_content_length
+  monitoring_query: sum(locust_requests_avg_content_length{name="POST /agentic-sessions"})
+  monitoring_step: 15
+
+# --- GET /agentic-sessions/:name ---
+- name: results.GET_agentic-sessions_name.locust_requests_avg_response_time
+  monitoring_query: sum(locust_requests_avg_response_time{name="GET /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.GET_agentic-sessions_name.locust_requests_current_rps
+  monitoring_query: sum(locust_requests_current_rps{name="GET /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.GET_agentic-sessions_name.locust_requests_current_fail_per_sec
+  monitoring_query: sum(locust_requests_current_fail_per_sec{name="GET /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.GET_agentic-sessions_name.locust_requests_num_failures
+  monitoring_query: sum(locust_requests_num_failures{name="GET /agentic-sessions/:name"})
+  monitoring_step: 15
+
+# --- GET /agentic-sessions (list) ---
+- name: results.GET_agentic-sessions_list.locust_requests_avg_response_time
+  monitoring_query: sum(locust_requests_avg_response_time{name="GET /agentic-sessions (list)"})
+  monitoring_step: 15
+- name: results.GET_agentic-sessions_list.locust_requests_current_rps
+  monitoring_query: sum(locust_requests_current_rps{name="GET /agentic-sessions (list)"})
+  monitoring_step: 15
+- name: results.GET_agentic-sessions_list.locust_requests_current_fail_per_sec
+  monitoring_query: sum(locust_requests_current_fail_per_sec{name="GET /agentic-sessions (list)"})
+  monitoring_step: 15
+- name: results.GET_agentic-sessions_list.locust_requests_num_failures
+  monitoring_query: sum(locust_requests_num_failures{name="GET /agentic-sessions (list)"})
+  monitoring_step: 15
+
+# --- PATCH /agentic-sessions/:name ---
+- name: results.PATCH_agentic-sessions_name.locust_requests_avg_response_time
+  monitoring_query: sum(locust_requests_avg_response_time{name="PATCH /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.PATCH_agentic-sessions_name.locust_requests_current_rps
+  monitoring_query: sum(locust_requests_current_rps{name="PATCH /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.PATCH_agentic-sessions_name.locust_requests_current_fail_per_sec
+  monitoring_query: sum(locust_requests_current_fail_per_sec{name="PATCH /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.PATCH_agentic-sessions_name.locust_requests_num_failures
+  monitoring_query: sum(locust_requests_num_failures{name="PATCH /agentic-sessions/:name"})
+  monitoring_step: 15
+
+# --- DELETE /agentic-sessions/:name ---
+- name: results.DELETE_agentic-sessions_name.locust_requests_avg_response_time
+  monitoring_query: sum(locust_requests_avg_response_time{name="DELETE /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.DELETE_agentic-sessions_name.locust_requests_current_rps
+  monitoring_query: sum(locust_requests_current_rps{name="DELETE /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.DELETE_agentic-sessions_name.locust_requests_current_fail_per_sec
+  monitoring_query: sum(locust_requests_current_fail_per_sec{name="DELETE /agentic-sessions/:name"})
+  monitoring_step: 15
+- name: results.DELETE_agentic-sessions_name.locust_requests_num_failures
+  monitoring_query: sum(locust_requests_num_failures{name="DELETE /agentic-sessions/:name"})
+  monitoring_step: 15
+
+
+# ============================================================================
+# Locust infrastructure metrics (locust-operator namespace pods)
+# ============================================================================
+
+- name: measurements.locust.master.cpu
+  monitoring_query: sum(pod:container_cpu_usage:sum{namespace='locust-operator', pod=~'.*master.*'})
+  monitoring_step: 15
+- name: measurements.locust.master.memory
+  monitoring_query: sum(container_memory_usage_bytes{namespace='locust-operator', pod=~'.*master.*', container!='POD', container!=''})
+  monitoring_step: 15
+- name: measurements.locust.workers.cpu
+  monitoring_query: sum(pod:container_cpu_usage:sum{namespace='locust-operator', pod=~'.*worker.*'})
+  monitoring_step: 15
+- name: measurements.locust.workers.memory
+  monitoring_query: sum(container_memory_usage_bytes{namespace='locust-operator', pod=~'.*worker.*', container!='POD', container!=''})
+  monitoring_step: 15
+
+
+# ============================================================================
+# Cluster metadata (collected via shell commands)
+# ============================================================================
+
+- name: metadata.cluster.context
+  command: oc project default > /dev/null 2>&1; oc config current-context
+
+- name: metadata.cluster.control-plane.count
+  command: oc get nodes -l node-role.kubernetes.io/master -o name 2>/dev/null | wc -l
+
+- name: metadata.cluster.control-plane.flavor
+  command: >-
+    oc get nodes -l node-role.kubernetes.io/master -o json
+    | jq --raw-output '.items | map(.metadata.labels."beta.kubernetes.io/instance-type") | unique | sort | join(",")'
+
+- name: metadata.cluster.compute-nodes.count
+  command: oc get nodes -l node-role.kubernetes.io/worker -o name 2>/dev/null | wc -l
+
+- name: metadata.cluster.compute-nodes.flavor
+  command: >-
+    oc get nodes -l node-role.kubernetes.io/worker -o json
+    | jq --raw-output '.items | map(.metadata.labels."beta.kubernetes.io/instance-type") | unique | sort | join(",")'
