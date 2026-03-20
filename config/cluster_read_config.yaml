@@ -207,6 +207,43 @@
 
 
 # ============================================================================
+# Ambient application metrics (from otel-collector)
+# ============================================================================
+
+- name: measurements.ambient.reconcile.duration_avg
+  monitoring_query: sum(rate(ambient_reconcile_duration_seconds_sum{namespace='ambient-code'}[5m])) / sum(rate(ambient_reconcile_duration_seconds_count{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+- name: measurements.ambient.reconcile.duration_p99
+  monitoring_query: histogram_quantile(0.99, sum(rate(ambient_reconcile_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
+  monitoring_step: 15
+
+- name: measurements.ambient.reconcile.duration_p95
+  monitoring_query: histogram_quantile(0.95, sum(rate(ambient_reconcile_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
+  monitoring_step: 15
+
+- name: measurements.ambient.reconcile.rate
+  monitoring_query: sum(rate(ambient_reconcile_duration_seconds_count{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+- name: measurements.ambient.reconcile.retries_rate
+  monitoring_query: sum(rate(ambient_reconcile_retries_total{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+- name: measurements.ambient.sessions.by_project
+  monitoring_query: sum(ambient_sessions_by_project_total{namespace='ambient-code'})
+  monitoring_step: 15
+
+- name: measurements.ambient.sessions.by_user
+  monitoring_query: sum(ambient_sessions_by_user_total{namespace='ambient-code'})
+  monitoring_step: 15
+
+- name: measurements.ambient.sessions.pending
+  monitoring_query: sum(ambient_sessions_pending{namespace='ambient-code'})
+  monitoring_step: 15
+
+
+# ============================================================================
 # Locust global metrics (from locust exporter / ServiceMonitor)
 # ============================================================================
 
