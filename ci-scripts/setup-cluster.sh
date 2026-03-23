@@ -9,7 +9,7 @@ source "$(dirname "$0")/locust.sh"
 
 # Ambient Code platform repository
 AMBIENT_CODE_GIT="${AMBIENT_CODE_GIT:-https://github.com/ambient-code/platform.git}"
-AMBIENT_CODE_COMMIT="${AMBIENT_CODE_COMMIT:-9d9d9b73b77f72981b4cee272494373920de9ac4}"
+AMBIENT_CODE_COMMIT="${AMBIENT_CODE_COMMIT:-7af078ad1aea64986206445719d3c944a8b05c97}"
 
 # Deployment configuration
 LOCAL_DIR="${LOCAL_DIR:-workspaces/ambient-code}"
