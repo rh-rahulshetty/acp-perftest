@@ -33,6 +33,7 @@ LOADTEST_SA_IDENTITY = os.environ.get(
     "LOADTEST_SA_IDENTITY",
     "system:serviceaccount:ambient-code:loadtest-sa",
 )
+RUNNER_API_KEY = os.environ.get("RUNNER_API_KEY", "mock-replay-key")
 
 
 def _build_headers():
@@ -60,42 +61,20 @@ def on_test_start(environment, **kwargs):
         logger.info("Project %s ready (status %d)", PROJECT_NAME, resp.status_code)
     else:
         logger.error("Failed to create project %s: %s %s", PROJECT_NAME, resp.status_code, resp.text)
-
-
-@events.test_stop.add_listener
-def on_test_stop(environment, **kwargs):
-    """Global teardown — list sessions from the API and delete them.
-
-    In distributed mode workers track sessions locally but the master
-    runs this handler, so in-memory tracking is unreliable. Instead we
-    query the API for all sessions in the project and delete them.
-    """
-    if isinstance(environment.runner, WorkerRunner):
         return
 
-    host = environment.host
-    headers = _build_headers()
-    base = f"{host}/api/projects/{PROJECT_NAME}/agentic-sessions"
-
-    # Fetch sessions from the API instead of relying on in-memory tracking
-    sessions = []
-    try:
-        resp = req_lib.get(base, headers=headers)
-        if resp.ok:
-            data = resp.json()
-            # Handle both list and wrapped response formats
-            items = data if isinstance(data, list) else data.get("items", data.get("sessions", []))
-            sessions = [s.get("name") for s in items if s.get("name")]
-    except Exception as exc:
-        logger.warning("Failed to list sessions for cleanup: %s", exc)
-
-    logger.info("Global teardown: deleting %d sessions …", len(sessions))
-    for name in sessions:
-        try:
-            req_lib.delete(f"{base}/{name}", headers=headers)
-        except Exception:
-            pass
-    logger.info("Global teardown complete")
+    # Set runner secrets so session creation validation passes
+    # (backend checks ambient-runner-secrets K8s Secret exists with a non-empty key)
+    logger.info("Setting runner secrets for project %s …", PROJECT_NAME)
+    resp = req_lib.put(
+        f"{host}/api/projects/{PROJECT_NAME}/runner-secrets",
+        json={"data": {"ANTHROPIC_API_KEY": RUNNER_API_KEY}},
+        headers=headers,
+    )
+    if resp.status_code in (200, 201, 204):
+        logger.info("Runner secrets set for project %s (status %d)", PROJECT_NAME, resp.status_code)
+    else:
+        logger.error("Failed to set runner secrets for %s: %s %s", PROJECT_NAME, resp.status_code, resp.text)
 
 
 class SessionCreateUser(HttpUser):

@@ -55,6 +55,13 @@ function setup() {
 
     oc create namespace $AMBIENT_NAMESPACE || true
 
+    # Unset vertex config if its not enabled
+    if ! is_truthy "$ENABLE_VERTEX"; then
+        unset GOOGLE_APPLICATION_CREDENTIALS
+        unset ANTHROPIC_VERTEX_PROJECT_ID
+        unset CLOUD_ML_REGION
+    fi
+
     # Generate passwords and apply secrets to the cluster
     export AMBIENT_NAMESPACE
     cp config/ambient/.env "$MANIFESTS_DIR/.env"

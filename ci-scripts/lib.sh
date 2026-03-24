@@ -129,34 +129,44 @@ function wait_for_agenticsessions() {
     local namespace="$1"
     local timeout="${2:-300}"
 
-    info "Waiting up to ${timeout}s for agenticsession pods in namespace $namespace …"
+    local total
+    total=$(oc get agenticsessions -n "$namespace" --no-headers 2>/dev/null | wc -l)
+    if [[ "$total" -eq 0 ]]; then
+        info "No agenticsessions found in namespace $namespace"
+        return 0
+    fi
+
+    info "Waiting up to ${timeout}s for $total agenticsession pod(s) in namespace $namespace …"
 
     local deadline=$(( $(date +%s) + timeout ))
+    local log_interval=$(( timeout / 4 ))
+    [[ "$log_interval" -lt 5 ]] && log_interval=5
+    local next_log=0
     while true; do
-        local total pending
-        total=$(oc get agenticsessions -n "$namespace" --no-headers 2>/dev/null | wc -l)
-        if [[ "$total" -eq 0 ]]; then
-            info "No agenticsessions found in namespace $namespace"
-            return 0
-        fi
-
-        # Count pods owned by agenticsessions that are not yet Running/Succeeded
-        pending=$(oc get pods -n "$namespace" \
+        # Count pods owned by agenticsessions that are Running or Succeeded
+        local ready
+        ready=$(oc get pods -n "$namespace" \
             -l app.kubernetes.io/managed-by=agentic-operator \
             --no-headers 2>/dev/null \
-            | grep -cvE '\s(Running|Succeeded)\s' || true)
+            | grep -cE '\s(Running|Succeeded)\s' || true)
 
-        if [[ "$pending" -eq 0 ]]; then
-            info "All agenticsession pods are ready in namespace $namespace ($total session(s))"
+        if [[ "$ready" -ge "$total" ]]; then
+            info "All agenticsession pods are ready in namespace $namespace ($ready/$total)"
             return 0
         fi
 
-        if [[ "$(date +%s)" -ge "$deadline" ]]; then
-            warning "Timed out waiting for agenticsession pods ($pending still pending after ${timeout}s) — proceeding anyway"
+        local now
+        now=$(date +%s)
+
+        if [[ "$now" -ge "$deadline" ]]; then
+            warning "Timed out waiting for agenticsession pods ($ready/$total ready after ${timeout}s) — proceeding anyway"
             return 0
         fi
 
-        debug "Waiting for $pending pod(s) to be ready … ($total session(s) total)"
+        if [[ "$now" -ge "$next_log" ]]; then
+            info "Waiting for agenticsession pods … ($ready/$total ready)"
+            next_log=$(( now + log_interval ))
+        fi
         sleep 5
     done
 }
