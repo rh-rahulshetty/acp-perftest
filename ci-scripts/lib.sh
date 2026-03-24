@@ -122,6 +122,66 @@ function clone_repository() {
     git -C "$target_dir" checkout "$commit"
 }
 
+function wait_for_agenticsessions() {
+    # Wait for all agenticsession pods to be created (Running/Succeeded).
+    #
+    # Usage: wait_for_agenticsessions <namespace> [timeout_seconds]
+    local namespace="$1"
+    local timeout="${2:-300}"
+
+    info "Waiting up to ${timeout}s for agenticsession pods in namespace $namespace …"
+
+    local deadline=$(( $(date +%s) + timeout ))
+    while true; do
+        local total pending
+        total=$(oc get agenticsessions -n "$namespace" --no-headers 2>/dev/null | wc -l)
+        if [[ "$total" -eq 0 ]]; then
+            info "No agenticsessions found in namespace $namespace"
+            return 0
+        fi
+
+        # Count pods owned by agenticsessions that are not yet Running/Succeeded
+        pending=$(oc get pods -n "$namespace" \
+            -l app.kubernetes.io/managed-by=agentic-operator \
+            --no-headers 2>/dev/null \
+            | grep -cvE '\s(Running|Succeeded)\s' || true)
+
+        if [[ "$pending" -eq 0 ]]; then
+            info "All agenticsession pods are ready in namespace $namespace ($total session(s))"
+            return 0
+        fi
+
+        if [[ "$(date +%s)" -ge "$deadline" ]]; then
+            warning "Timed out waiting for agenticsession pods ($pending still pending after ${timeout}s) — proceeding anyway"
+            return 0
+        fi
+
+        debug "Waiting for $pending pod(s) to be ready … ($total session(s) total)"
+        sleep 5
+    done
+}
+
+function save_agenticsessions() {
+    # Save each agenticsession resource as individual YAML files.
+    #
+    # Usage: save_agenticsessions <namespace> <output_dir>
+    local namespace="$1"
+    local output_dir="$2"
+
+    mkdir -p "$output_dir"
+    info "Saving agenticsession resources from namespace $namespace to $output_dir …"
+
+    local count=0
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        oc get agenticsession "$name" -n "$namespace" -o yaml \
+            > "$output_dir/${name}.yaml" 2>/dev/null || true
+        count=$((count + 1))
+    done < <(oc get agenticsessions -n "$namespace" --no-headers -o custom-columns=":metadata.name" 2>/dev/null || true)
+
+    info "Saved $count agenticsession(s) from namespace $namespace"
+}
+
 function is_truthy() {
     # Usage: is_truthy "$value"
     # Returns 0 (true) if the value is a recognized truthy string, 1 (false) otherwise
