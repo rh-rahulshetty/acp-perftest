@@ -29,6 +29,7 @@ LOADTEST_SA_IDENTITY = os.environ.get(
     "LOADTEST_SA_IDENTITY",
     "system:serviceaccount:ambient-code:loadtest-sa",
 )
+RUNNER_API_KEY = os.environ.get("RUNNER_API_KEY", "mock-replay-key")
 
 # Module-level list so teardown can access session names created during setup
 _created_sessions = []
@@ -62,6 +63,20 @@ def on_test_start(environment, **kwargs):
         logger.error("Failed to create project %s: %s %s", PROJECT_NAME, resp.status_code, resp.text)
         return
     logger.info("Project %s ready (status %d)", PROJECT_NAME, resp.status_code)
+
+    # Set runner secrets so session creation validation passes
+    # (backend checks ambient-runner-secrets K8s Secret exists with a non-empty key)
+    logger.info("Setting runner secrets for project %s …", PROJECT_NAME)
+    resp = req_lib.put(
+        f"{host}/api/projects/{PROJECT_NAME}/runner-secrets",
+        json={"data": {"ANTHROPIC_API_KEY": RUNNER_API_KEY}},
+        headers=headers,
+    )
+    if resp.status_code in (200, 201, 204):
+        logger.info("Runner secrets set for project %s (status %d)", PROJECT_NAME, resp.status_code)
+    else:
+        logger.error("Failed to set runner secrets for %s: %s %s", PROJECT_NAME, resp.status_code, resp.text)
+
 
     # Create sessions sequentially. The backend names sessions as
     # session-<unix_seconds>, so we sleep briefly between requests
