@@ -146,7 +146,7 @@ function wait_for_agenticsessions() {
         # Count pods owned by agenticsessions that are Running or Succeeded
         local ready
         ready=$(oc get pods -n "$namespace" \
-            -l app.kubernetes.io/managed-by=agentic-operator \
+            -l app=ambient-code-runner \
             --no-headers 2>/dev/null \
             | grep -cE '\s(Running|Succeeded)\s' || true)
 

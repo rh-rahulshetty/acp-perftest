@@ -11,11 +11,16 @@ source "$(dirname "$0")/locust.sh"
 AMBIENT_CODE_GIT="${AMBIENT_CODE_GIT:-https://github.com/ambient-code/platform.git}"
 AMBIENT_CODE_COMMIT="${AMBIENT_CODE_COMMIT:-7af078ad1aea64986206445719d3c944a8b05c97}"
 
-# Vertext configuration
-export ENABLE_VERTEX="${ENABLE_VERTEX:-false}"
-export GOOGLE_APPLICATION_CREDENTIALS="$GOOGLE_APPLICATION_CREDENTIALS"
-export ANTHROPIC_VERTEX_PROJECT_ID="$ANTHROPIC_VERTEX_PROJECT_ID"
-export CLOUD_ML_REGION="$ANTHROPIC_VERTEX_PROJECT_ID"
+# Vertex configuration
+ENABLE_VERTEX="${ENABLE_VERTEX:-false}"
+if is_truthy "$ENABLE_VERTEX"; then
+    export ENABLE_VERTEX
+    export GOOGLE_APPLICATION_CREDENTIALS="${GOOGLE_APPLICATION_CREDENTIALS:-}"
+    export ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}"
+    export CLOUD_ML_REGION="${CLOUD_ML_REGION:-}"
+else
+    unset GOOGLE_APPLICATION_CREDENTIALS ANTHROPIC_VERTEX_PROJECT_ID CLOUD_ML_REGION
+fi
 
 
 # Deployment configuration
@@ -55,13 +60,6 @@ function setup() {
 
     oc create namespace $AMBIENT_NAMESPACE || true
 
-    # Unset vertex config if its not enabled
-    if ! is_truthy "$ENABLE_VERTEX"; then
-        unset GOOGLE_APPLICATION_CREDENTIALS
-        unset ANTHROPIC_VERTEX_PROJECT_ID
-        unset CLOUD_ML_REGION
-    fi
-
     # Generate passwords and apply secrets to the cluster
     export AMBIENT_NAMESPACE
     cp config/ambient/.env "$MANIFESTS_DIR/.env"
@@ -83,6 +81,16 @@ function setup() {
         info "Deployed successfully"
     else
         fatal "Deployment failed"
+    fi
+
+    # The production overlay hardcodes USE_VERTEX=1 in operator-config-openshift.yaml.
+    # Override it when Vertex is not enabled for this deployment.
+    if ! is_truthy "$ENABLE_VERTEX"; then
+        info "Disabling Vertex in operator-config ConfigMap"
+        kubectl patch configmap operator-config -n "$AMBIENT_NAMESPACE" --type=merge \
+            -p '{"data":{"USE_VERTEX":"0","ANTHROPIC_VERTEX_PROJECT_ID":""}}'
+        kubectl rollout restart deployment/agentic-operator -n "$AMBIENT_NAMESPACE"
+        kubectl rollout restart deployment/backend-api -n "$AMBIENT_NAMESPACE"
     fi
     
     # Setup Minio
