@@ -20,7 +20,6 @@ Environment variables (set via locusttest.yaml env or shell):
 
 import os
 import logging
-import threading
 
 import requests as req_lib
 from locust import HttpUser, task, between, events
@@ -34,10 +33,6 @@ LOADTEST_SA_IDENTITY = os.environ.get(
     "LOADTEST_SA_IDENTITY",
     "system:serviceaccount:ambient-code:loadtest-sa",
 )
-
-# Thread-safe tracking of created sessions for cleanup
-_created_sessions = []
-_lock = threading.Lock()
 
 
 def _build_headers():
@@ -69,7 +64,12 @@ def on_test_start(environment, **kwargs):
 
 @events.test_stop.add_listener
 def on_test_stop(environment, **kwargs):
-    """Global teardown — delete all sessions created during the test."""
+    """Global teardown — list sessions from the API and delete them.
+
+    In distributed mode workers track sessions locally but the master
+    runs this handler, so in-memory tracking is unreliable. Instead we
+    query the API for all sessions in the project and delete them.
+    """
     if isinstance(environment.runner, WorkerRunner):
         return
 
@@ -77,9 +77,17 @@ def on_test_stop(environment, **kwargs):
     headers = _build_headers()
     base = f"{host}/api/projects/{PROJECT_NAME}/agentic-sessions"
 
-    with _lock:
-        sessions = list(_created_sessions)
-        _created_sessions.clear()
+    # Fetch sessions from the API instead of relying on in-memory tracking
+    sessions = []
+    try:
+        resp = req_lib.get(base, headers=headers)
+        if resp.ok:
+            data = resp.json()
+            # Handle both list and wrapped response formats
+            items = data if isinstance(data, list) else data.get("items", data.get("sessions", []))
+            sessions = [s.get("name") for s in items if s.get("name")]
+    except Exception as exc:
+        logger.warning("Failed to list sessions for cleanup: %s", exc)
 
     logger.info("Global teardown: deleting %d sessions …", len(sessions))
     for name in sessions:
@@ -113,12 +121,5 @@ class SessionCreateUser(HttpUser):
         ) as resp:
             if resp.status_code in (200, 201):
                 resp.success()
-                try:
-                    name = resp.json().get("name")
-                    if name:
-                        with _lock:
-                            _created_sessions.append(name)
-                except Exception:
-                    pass
             else:
                 resp.failure(f"Create failed: {resp.status_code} {resp.text[:200]}")

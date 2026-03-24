@@ -35,8 +35,8 @@ export TEST_SCENARIO=session-create
 
 ```bash
 export TEST_SCENARIO=session-create
-export TEST_USERS=20
+export TEST_USERS=100
 export TEST_SPAWN_RATE=5
-export TEST_RUN_TIME=10m
+export TEST_RUN_TIME=3m
 ./ci-scripts/load-test.sh
 ```

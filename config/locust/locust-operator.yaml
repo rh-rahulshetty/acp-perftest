@@ -1,6 +1,9 @@
 # Helm values for locust-k8s-operator (OpenShift compatible)
 # Ref: https://github.com/AbdelrhmanHamouda/locust-k8s-operator
 
+image:
+  repository: mirror.gcr.io/lotest/locust-k8s-operator
+
 # OpenShift SCC: let the platform assign UIDs/GIDs
 podSecurityContext:
   runAsNonRoot: true

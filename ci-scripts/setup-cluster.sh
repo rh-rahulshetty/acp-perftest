@@ -11,6 +11,13 @@ source "$(dirname "$0")/locust.sh"
 AMBIENT_CODE_GIT="${AMBIENT_CODE_GIT:-https://github.com/ambient-code/platform.git}"
 AMBIENT_CODE_COMMIT="${AMBIENT_CODE_COMMIT:-7af078ad1aea64986206445719d3c944a8b05c97}"
 
+# Vertext configuration
+export ENABLE_VERTEX="${ENABLE_VERTEX:-false}"
+export GOOGLE_APPLICATION_CREDENTIALS="$GOOGLE_APPLICATION_CREDENTIALS"
+export ANTHROPIC_VERTEX_PROJECT_ID="$ANTHROPIC_VERTEX_PROJECT_ID"
+export CLOUD_ML_REGION="$ANTHROPIC_VERTEX_PROJECT_ID"
+
+
 # Deployment configuration
 LOCAL_DIR="${LOCAL_DIR:-workspaces/ambient-code}"
 MANIFESTS_DIR="$LOCAL_DIR/components/manifests"
@@ -53,9 +60,19 @@ function setup() {
     cp config/ambient/.env "$MANIFESTS_DIR/.env"
     apply_secrets
 
+    # Patch unleash image to use GHCR mirror (avoids Docker Hub rate limits)
+    info "Applying GHCR mirror patch for unleash image"
+    git -C $LOCAL_DIR apply "$PWD/config/ambient/use-ghcr-mirror.patch"
+
     # Deploy ACP
     make deploy -C $LOCAL_DIR
-    if [ $? -eq 0 ]; then
+    deploy_rc=$?
+
+    # Revert the GHCR mirror patch to keep workspace clean
+    info "Reverting GHCR mirror patch"
+    git -C $LOCAL_DIR apply -R "$PWD/config/ambient/use-ghcr-mirror.patch"
+
+    if [ $deploy_rc -eq 0 ]; then
         info "Deployed successfully"
     else
         fatal "Deployment failed"
@@ -67,6 +84,12 @@ function setup() {
         info "Minio setup successful"
     else
         fatal "Minio setup failed"
+    fi
+
+    # Enable vertex integration
+    if is_truthy "$ENABLE_VERTEX" && [ -f "$LOCAL_DIR/scripts/setup-vertex-kind.sh" ]; then
+        info "Enabling vertex integration"
+        ./$LOCAL_DIR/scripts/setup-vertex-kind.sh
     fi
     
     # Enable Observability

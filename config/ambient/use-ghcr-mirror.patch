@@ -1,0 +1,13 @@
+diff --git a/components/manifests/base/core/unleash-deployment.yaml b/components/manifests/base/core/unleash-deployment.yaml
+index b4dcaa2f..f50e8b4b 100644
+--- a/components/manifests/base/core/unleash-deployment.yaml
++++ b/components/manifests/base/core/unleash-deployment.yaml
+@@ -23,7 +23,7 @@ spec:
+     spec:
+       containers:
+       - name: unleash
+-        image: unleashorg/unleash-server:5.11.3
++        image: mirror.gcr.io/unleashorg/unleash-server:5.11.3
+         ports:
+         - containerPort: 4242
+           name: http

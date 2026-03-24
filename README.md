@@ -32,6 +32,7 @@ This repository provides tooling to set up an OpenShift cluster with the Ambient
 # export MINIO_ROOT_PASSWORD="<password>"
 # export POSTGRES_PASSWORD="<password>"
 # export UNLEASH_ADMIN_PASSWORD="<password>"
+# export ENABLE_VERTEX=true
 
 ./ci-scripts/setup-cluster.sh
 ```
