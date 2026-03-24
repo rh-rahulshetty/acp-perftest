@@ -181,6 +181,10 @@ function save_agenticsessions() {
     mkdir -p "$output_dir"
     info "Saving agenticsession resources from namespace $namespace to $output_dir …"
 
+    # Save summary listing before fetching individual resources
+    oc get agenticsessions -n "$namespace" -o wide \
+        > "$output_dir/agenticsessions.log" 2>/dev/null || true
+
     local count=0
     while IFS= read -r name; do
         [[ -z "$name" ]] && continue

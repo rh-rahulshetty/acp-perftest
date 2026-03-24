@@ -25,7 +25,7 @@ export TEST_SCENARIO=session-listing
 | `TEST_USERS` | `10` | Number of simulated users |
 | `TEST_SPAWN_RATE` | `2` | Users spawned per second |
 | `TEST_RUN_TIME` | `5m` | Test duration |
-| `TEST_WORKERS` | `2` | Locust worker replicas |
+| `TEST_WORKERS` | `3` | Locust worker replicas |
 | `AUTH_TOKEN` | auto-detected | Bearer token (falls back to `oc whoami -t`) |
 | `LOCUST_HOST` | `http://backend-service.<ns>.svc.cluster.local:8080` | Override target host |
 | `AMBIENT_NAMESPACE` | `ambient-code` | Namespace where ambient is deployed |
@@ -35,7 +35,12 @@ export TEST_SCENARIO=session-listing
 ```bash
 export TEST_SCENARIO=session-listing
 export SESSIONS_TO_CREATE=50
+
 export TEST_USERS=20
-export TEST_RUN_TIME=10m
+export TEST_SPAWN_RATE=0.083
+export TEST_RUN_TIME=5m
+export SESSION_CREATION_TIMEOUT=60
+export TEST_WORKERS=3
+
 ./ci-scripts/load-test.sh
 ```

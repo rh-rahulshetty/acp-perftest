@@ -83,25 +83,9 @@ def on_test_start(environment, **kwargs):
 
     logger.info("Global setup complete: created %d/%d sessions", len(_created_sessions), SESSIONS_TO_CREATE)
 
-
-@events.test_stop.add_listener
-def on_test_stop(environment, **kwargs):
-    """Global teardown — delete sessions created during setup."""
-    if isinstance(environment.runner, WorkerRunner):
-        return
-
-    host = environment.host
-    headers = _build_headers()
-    base = f"{host}/api/projects/{PROJECT_NAME}/agentic-sessions"
-
-    logger.info("Global teardown: deleting %d sessions …", len(_created_sessions))
-    for name in _created_sessions:
-        try:
-            req_lib.delete(f"{base}/{name}", headers=headers)
-        except Exception:
-            pass
-    _created_sessions.clear()
-    logger.info("Global teardown complete")
+    if len(_created_sessions) == 0:
+        logger.error("No sessions were created — aborting test")
+        environment.runner.quit()
 
 
 class SessionListingUser(HttpUser):
