@@ -23,7 +23,7 @@ Environment variables (set via locusttest.yaml env or shell):
   PROJECT_NAME           Target project name (default: session-info)
   AUTH_TOKEN              Bearer token (SA token created by setup-cluster.sh)
   LOAD_STEPS             Step profile string (optional, see above)
-  LOADTEST_SA_IDENTITY   SA identity for X-Forwarded-User header
+  LOADTEST_SA_IDENTITY   SA identity for X-Remote-User header
                          (default: system:serviceaccount:ambient-code:loadtest-sa)
 """
 
@@ -80,31 +80,63 @@ def _parse_load_steps(steps_str):
 def _build_headers():
     headers = {
         "Content-Type": "application/json",
-        "X-Forwarded-User": LOADTEST_SA_IDENTITY,
+        "X-Remote-User": LOADTEST_SA_IDENTITY,
     }
     if AUTH_TOKEN:
         headers["Authorization"] = f"Bearer {AUTH_TOKEN}"
+    else:
+        logger.warning("AUTH_TOKEN is empty — requests will fail with 401")
     return headers
 
 
+# Session name — discovered once per worker process, shared by all users in that process
+_session_name = None
+
+
 def _discover_session(host, headers):
-    """Find the first session in the project by listing sessions."""
+    """Find the first session in the project by listing sessions.
+
+    Caches the result in _session_name so it's only called once per process.
+    """
+    global _session_name
+    if _session_name is not None:
+        return _session_name
+
     url = f"{host}/api/projects/{PROJECT_NAME}/agentic-sessions?limit=1"
+    logger.info("Discovering session: GET %s", url)
     for attempt in range(10):
         try:
             resp = req_lib.get(url, headers=headers)
             if resp.ok:
-                items = resp.json().get("items", [])
+                body = resp.json()
+                logger.info("Discovery attempt %d: status=%d body_keys=%s", attempt + 1, resp.status_code, list(body.keys()) if isinstance(body, dict) else type(body).__name__)
+                items = body.get("items", [])
                 if items:
-                    return items[0].get("name")
+                    item = items[0]
+                    # Session name is in metadata.name (k8s-style resource)
+                    name = (
+                        item.get("metadata", {}).get("name")
+                        or item.get("name")
+                        or item.get("id")
+                    )
+                    if name:
+                        _session_name = name
+                        logger.info("Session discovered: %s", _session_name)
+                        return _session_name
+                    logger.warning("Discovery attempt %d: item found but no name field. Keys: %s", attempt + 1, list(item.keys()))
+                else:
+                    logger.info("Discovery attempt %d: no items yet", attempt + 1)
+            else:
+                logger.warning("Discovery attempt %d: status=%d body=%s", attempt + 1, resp.status_code, resp.text[:300])
         except Exception as exc:
-            logger.warning("Session discovery attempt %d failed: %s", attempt + 1, exc)
+            logger.warning("Discovery attempt %d failed: %s", attempt + 1, exc)
         time.sleep(2)
+    logger.error("Session discovery failed after 10 attempts")
     return None
 
 
 # ---------------------------------------------------------------------------
-# Global setup / teardown — runs once on master (or standalone)
+# Global setup — runs once on master (or standalone)
 # ---------------------------------------------------------------------------
 @events.test_start.add_listener
 def on_test_start(environment, **kwargs):
@@ -150,7 +182,11 @@ def on_test_start(environment, **kwargs):
     for attempt in range(3):
         resp = req_lib.post(base, json=payload, headers=headers)
         if resp.status_code in (200, 201):
-            session_name = resp.json().get("name")
+            data = resp.json()
+            session_name = (
+                data.get("metadata", {}).get("name")
+                or data.get("name")
+            )
             break
         elif resp.status_code == 500 and attempt < 2:
             time.sleep(1.1)
@@ -165,6 +201,7 @@ def on_test_start(environment, **kwargs):
         return
     logger.info("Session created: %s", session_name)
 
+
 # ---------------------------------------------------------------------------
 # Virtual user
 # ---------------------------------------------------------------------------
@@ -173,18 +210,17 @@ class SessionInfoUser(HttpUser):
 
     def on_start(self):
         self.headers = _build_headers()
-        # Discover the session name by listing sessions in the project.
-        # This works on both master and worker processes.
+        # Discover session once per worker process (cached in _session_name)
         self._session_name = _discover_session(self.host, self.headers)
         if not self._session_name:
-            logger.error("Could not discover session — user will be idle")
+            raise RuntimeError(
+                "Could not discover session after 10 attempts — "
+                "check AUTH_TOKEN, LOCUST_HOST, and PROJECT_NAME"
+            )
 
     @task
     def get_session(self):
         """Fetch a single session by name — the primary load target."""
-        if not self._session_name:
-            return
-
         with self.client.get(
             f"/api/projects/{PROJECT_NAME}/agentic-sessions/{self._session_name}",
             headers=self.headers,

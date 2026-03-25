@@ -239,9 +239,19 @@ EOCR
     LOCUST_ARTIFACTS="$RUN_ARTIFACTS/locust"
     mkdir -p "$LOCUST_ARTIFACTS"
 
+    WORKER_LABEL="performance-test-pod-name=${LOCUST_TEST_NAME}-worker"
+
     info "Following locust master logs (test will block until completion) …"
     kubectl logs -n "$LOCUST_NAMESPACE" -f -l "$MASTER_LABEL" 2>&1 \
         | tee "$LOCUST_ARTIFACTS/master.log"
+
+    # Collect worker logs after test completes
+    info "Collecting locust worker logs …"
+    for worker_pod in $(kubectl get pods -n "$LOCUST_NAMESPACE" -l "$WORKER_LABEL" \
+        -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+        kubectl logs -n "$LOCUST_NAMESPACE" "$worker_pod" \
+            > "$LOCUST_ARTIFACTS/${worker_pod}.log" 2>/dev/null || true
+    done
 
     # -------------------------------------------------------------------
     # Phase 5: Extract CSV results from locust master
