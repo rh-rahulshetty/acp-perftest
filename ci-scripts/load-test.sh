@@ -209,7 +209,6 @@ spec:
       --users ${TEST_USERS}
       --spawn-rate ${TEST_SPAWN_RATE}
       --run-time ${TEST_RUN_TIME}
-      --csv /tmp/locust-results
   worker:
     command: "--locustfile /lotest/src/${LOCUST_SCRIPT}"
     replicas: ${TEST_WORKERS}
@@ -253,17 +252,6 @@ EOCR
             > "$LOCUST_ARTIFACTS/${worker_pod}.log" 2>/dev/null || true
     done
 
-    # -------------------------------------------------------------------
-    # Phase 5: Extract CSV results from locust master
-    # -------------------------------------------------------------------
-    info "Extracting CSV results from locust master pod …"
-    MASTER_POD=$(kubectl get pods -n "$LOCUST_NAMESPACE" -l "$MASTER_LABEL" \
-        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-
-    if [[ -n "$MASTER_POD" ]]; then
-        extract_locust_csv "$MASTER_POD" "$LOCUST_NAMESPACE" "$LOCUST_ARTIFACTS" \
-            || warning "CSV extraction failed — results may be incomplete"
-    fi
 else
     info "No locust/ directory — skipping locust deployment"
 fi
