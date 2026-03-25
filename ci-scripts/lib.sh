@@ -196,6 +196,176 @@ function save_agenticsessions() {
     info "Saved $count agenticsession(s) from namespace $namespace"
 }
 
+function extract_locust_csv() {
+    # Extract CSV result files from a completed locust master pod.
+    #
+    # kubectl cp fails on completed pods (needs a running container to exec tar).
+    # This function creates a debug copy of the pod with shared process namespaces,
+    # reads the CSV files from the original container's filesystem via /proc,
+    # and cleans up the debug pod afterwards.
+    #
+    # Usage: extract_locust_csv <pod_name> <namespace> <output_dir> [csv_prefix]
+    local pod_name="$1"
+    local namespace="$2"
+    local output_dir="$3"
+    local csv_prefix="${4:-/tmp/locust-results}"
+
+    local debug_pod="${pod_name}-debug"
+    local csv_suffixes=(stats.csv stats_history.csv failures.csv exceptions.csv)
+
+    mkdir -p "$output_dir"
+
+    # Try kubectl cp first — works if the container is still running
+    local cp_ok=true
+    for suffix in "${csv_suffixes[@]}"; do
+        kubectl cp "$namespace/$pod_name:${csv_prefix}_${suffix}" \
+            "$output_dir/locust_${suffix}" 2>/dev/null || { cp_ok=false; break; }
+    done
+
+    if [[ "$cp_ok" == "true" ]]; then
+        info "CSV files extracted via kubectl cp"
+        return 0
+    fi
+
+    # Container exited — use kubectl debug to create a pod copy with shared
+    # process namespaces and a busybox sidecar that can read the files
+    info "Container exited, extracting CSV files via debug pod …"
+
+    # Find the main container name
+    local container_name
+    container_name=$(kubectl get pod "$pod_name" -n "$namespace" \
+        -o jsonpath='{.spec.containers[0].name}' 2>/dev/null || echo "")
+    if [[ -z "$container_name" ]]; then
+        warning "Could not determine container name for pod $pod_name"
+        return 1
+    fi
+
+    # Create a debug copy — the original container restarts in the copy,
+    # and the debug container shares its PID namespace
+    kubectl debug "$pod_name" -n "$namespace" \
+        --copy-to="$debug_pod" \
+        --container=csv-extract \
+        --image=busybox:latest \
+        --share-processes=true \
+        -- sleep 300 >/dev/null 2>&1 &
+    local debug_pid=$!
+
+    # Wait for the debug pod and csv-extract container to be running
+    local deadline=$(( $(date +%s) + 60 ))
+    while true; do
+        local phase
+        phase=$(kubectl get pod "$debug_pod" -n "$namespace" \
+            -o jsonpath='{.status.containerStatuses[?(@.name=="csv-extract")].state.running.startedAt}' 2>/dev/null || echo "")
+        if [[ -n "$phase" ]]; then
+            break
+        fi
+        if [[ "$(date +%s)" -ge "$deadline" ]]; then
+            warning "Timeout waiting for debug pod $debug_pod"
+            kill "$debug_pid" 2>/dev/null || true
+            kubectl delete pod "$debug_pod" -n "$namespace" --ignore-not-found >/dev/null 2>&1
+            return 1
+        fi
+        sleep 2
+    done
+
+    # Find the PID of the original container's process inside the debug pod.
+    # The original container's root filesystem is at /proc/<pid>/root/
+    local target_pid
+    target_pid=$(kubectl exec "$debug_pod" -n "$namespace" -c csv-extract -- \
+        sh -c "ls /proc/*/root${csv_prefix}_stats.csv 2>/dev/null | head -1 | cut -d/ -f3" 2>/dev/null || echo "")
+
+    if [[ -z "$target_pid" ]]; then
+        warning "Could not find CSV files in debug pod — locust may not have written them"
+        kill "$debug_pid" 2>/dev/null || true
+        kubectl delete pod "$debug_pod" -n "$namespace" --ignore-not-found >/dev/null 2>&1
+        return 1
+    fi
+
+    # Copy each CSV file out
+    local extracted=0
+    for suffix in "${csv_suffixes[@]}"; do
+        local remote_path="/proc/${target_pid}/root${csv_prefix}_${suffix}"
+        if kubectl exec "$debug_pod" -n "$namespace" -c csv-extract -- \
+            cat "$remote_path" > "$output_dir/locust_${suffix}" 2>/dev/null; then
+            extracted=$((extracted + 1))
+        else
+            warning "Could not extract ${suffix}"
+        fi
+    done
+
+    # Clean up
+    kill "$debug_pid" 2>/dev/null || true
+    kubectl delete pod "$debug_pod" -n "$namespace" --ignore-not-found >/dev/null 2>&1
+
+    info "Extracted $extracted/${#csv_suffixes[@]} CSV files via debug pod"
+    return 0
+}
+
+function collect_env_metadata() {
+    # Collect relevant environment variables into a JSON object for test metadata.
+    #
+    # Usage: collect_env_metadata
+    # Output: JSON object string to stdout
+    #
+    # Plain variables are recorded with their value.
+    # Secret variables are recorded as true/false (whether they are set).
+
+    local plain_vars=(
+        TEST_SCENARIO
+        TEST_USERS
+        TEST_SPAWN_RATE
+        TEST_RUN_TIME
+        TEST_WORKERS
+        TEST_DO_CLEANUP
+        LOCUST_NAMESPACE
+        LOCUST_HOST
+        LOCUST_SCRIPT
+        AMBIENT_NAMESPACE
+        ARTIFACTS_DIR
+        PROJECT_NAME
+        SESSIONS_TO_CREATE
+        SESSION_MODE
+        SESSION_CREATION_TIMEOUT
+        LOAD_STEPS
+        LOADTEST_SA
+        LOADTEST_SA_IDENTITY
+        MONITORING_COLLECTION_ENABLED
+        MONITORING_URL
+    )
+
+    local secret_vars=(
+        AUTH_TOKEN
+        MONITORING_TOKEN
+        RUNNER_API_KEY
+    )
+
+    local json="{"
+    local first=true
+
+    for var in "${plain_vars[@]}"; do
+        if [[ -n "${!var+set}" ]]; then
+            $first || json+=","
+            first=false
+            # Escape double quotes in value
+            local val="${!var//\"/\\\"}"
+            json+="\"${var}\":\"${val}\""
+        fi
+    done
+
+    for var in "${secret_vars[@]}"; do
+        $first || json+=","
+        first=false
+        if [[ -n "${!var:-}" ]]; then
+            json+="\"${var}\":true"
+        else
+            json+="\"${var}\":false"
+        fi
+    done
+
+    json+="}"
+    echo "$json"
+}
+
 function is_truthy() {
     # Usage: is_truthy "$value"
     # Returns 0 (true) if the value is a recognized truthy string, 1 (false) otherwise

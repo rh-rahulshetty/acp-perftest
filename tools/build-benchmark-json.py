@@ -48,11 +48,12 @@ def build_benchmark(artifacts_dir: str) -> dict:
             benchmark["test_metadata"] = json.load(f)
 
     # Locust stats
-    stats_path = os.path.join(artifacts_dir, "locust_stats.csv")
+    locust_dir = os.path.join(artifacts_dir, "locust")
+    stats_path = os.path.join(locust_dir, "locust_stats.csv")
     benchmark["locust_stats"] = parse_locust_stats(stats_path)
 
     # Locust failures
-    failures_path = os.path.join(artifacts_dir, "locust_failures.csv")
+    failures_path = os.path.join(locust_dir, "locust_failures.csv")
     benchmark["locust_failures"] = parse_locust_failures(failures_path)
 
     # OPL monitoring data (if collected)

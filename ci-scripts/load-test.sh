@@ -80,6 +80,9 @@ info "Run ID: $RUN_ID (short: $RUN_ID_SHORT)"
 RUN_ARTIFACTS="$ARTIFACTS_DIR/$RUN_ID"
 mkdir -p "$RUN_ARTIFACTS"
 
+# Redirect all script output to both terminal and run.log in the artifacts dir
+exec > >(tee -a "$RUN_ARTIFACTS/run.log") 2>&1
+
 # Record test metadata
 cat > "$RUN_ARTIFACTS/test-metadata.json" <<EOF
 {
@@ -121,6 +124,18 @@ if [[ -f "$SCENARIO_DIR/setup.sh" ]]; then
     export PROJECT_ROOT SCENARIO_DIR LOCUST_DIR HAS_LOCUST
     source "$SCENARIO_DIR/setup.sh"
 fi
+
+# Append environment variables to test metadata (after scenario setup so
+# scenario-specific vars like PROJECT_NAME, LOAD_STEPS are captured)
+ENV_JSON="$(collect_env_metadata)"
+python3 -c "
+import json, sys
+with open('$RUN_ARTIFACTS/test-metadata.json') as f:
+    d = json.load(f)
+d['env'] = json.loads(sys.argv[1])
+with open('$RUN_ARTIFACTS/test-metadata.json', 'w') as f:
+    json.dump(d, f, indent=2)
+" "$ENV_JSON"
 
 # ---------------------------------------------------------------------------
 # Phase 2: Deploy Locust test (only if locust/ exists)
@@ -221,9 +236,12 @@ EOCR
     # -------------------------------------------------------------------
     # Phase 4: Follow master logs until container exits
     # -------------------------------------------------------------------
+    LOCUST_ARTIFACTS="$RUN_ARTIFACTS/locust"
+    mkdir -p "$LOCUST_ARTIFACTS"
+
     info "Following locust master logs (test will block until completion) …"
     kubectl logs -n "$LOCUST_NAMESPACE" -f -l "$MASTER_LABEL" 2>&1 \
-        | tee "$RUN_ARTIFACTS/locust-master.log"
+        | tee "$LOCUST_ARTIFACTS/master.log"
 
     # -------------------------------------------------------------------
     # Phase 5: Extract CSV results from locust master
@@ -233,10 +251,8 @@ EOCR
         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
 
     if [[ -n "$MASTER_POD" ]]; then
-        for suffix in stats.csv stats_history.csv failures.csv exceptions.csv; do
-            kubectl cp "$LOCUST_NAMESPACE/$MASTER_POD:/tmp/locust-results_${suffix}" \
-                "$RUN_ARTIFACTS/locust_${suffix}" 2>/dev/null || true
-        done
+        extract_locust_csv "$MASTER_POD" "$LOCUST_NAMESPACE" "$LOCUST_ARTIFACTS" \
+            || warning "CSV extraction failed — results may be incomplete"
     fi
 else
     info "No locust/ directory — skipping locust deployment"
