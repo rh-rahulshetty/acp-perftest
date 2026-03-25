@@ -5,6 +5,11 @@
 #
 # Only the listing endpoint is tracked — project/session setup and teardown
 # use plain HTTP (not the locust client) so they don't appear in locust metrics.
+#
+# Project-scoped ambient_* metrics use exported_namespace to filter by the
+# project namespace (PROJECT_NAME). The scrape-injected "namespace" label is
+# always "ambient-code"; the OTel-emitted project namespace lands in
+# "exported_namespace".
 
 # --- GET /agentic-sessions (list) — primary load target ---
 - name: results.GET_agentic-sessions_list.locust_requests_avg_response_time
@@ -16,6 +21,49 @@
 - name: results.GET_agentic-sessions_list.locust_requests_current_fail_per_sec
   monitoring_query: sum(locust_requests_current_fail_per_sec{name="GET /agentic-sessions (list)"})
   monitoring_step: 15
+- name: results.GET_agentic-sessions_list.locust_requests_num_requests
+  monitoring_query: sum(locust_requests_num_requests{name="GET /agentic-sessions (list)"})
+  monitoring_step: 15
 - name: results.GET_agentic-sessions_list.locust_requests_num_failures
   monitoring_query: sum(locust_requests_num_failures{name="GET /agentic-sessions (list)"})
+  monitoring_step: 15
+- name: results.GET_agentic-sessions_list.locust_requests_avg_content_length
+  monitoring_query: sum(locust_requests_avg_content_length{name="GET /agentic-sessions (list)"})
+  monitoring_step: 15
+
+# --- Project-scoped ambient metrics (exported_namespace = session-listing) ---
+- name: measurements.ambient.project.sessions_active
+  monitoring_query: sum(ambient_sessions_active{exported_namespace='session-listing'})
+  monitoring_step: 15
+- name: measurements.ambient.project.sessions_pending
+  monitoring_query: sum(ambient_sessions_pending{exported_namespace='session-listing'})
+  monitoring_step: 15
+- name: measurements.ambient.project.sessions_created
+  monitoring_query: sum(ambient_sessions_by_project_total{exported_namespace='session-listing'})
+  monitoring_step: 15
+- name: measurements.ambient.project.session_startup_duration_avg
+  monitoring_query: >-
+    sum(rate(ambient_session_startup_duration_seconds_sum{exported_namespace='session-listing'}[5m]))
+    / sum(rate(ambient_session_startup_duration_seconds_count{exported_namespace='session-listing'}[5m]))
+  monitoring_step: 15
+- name: measurements.ambient.project.session_startup_duration_p99
+  monitoring_query: histogram_quantile(0.99, sum(rate(ambient_session_startup_duration_seconds_bucket{exported_namespace='session-listing'}[5m])) by (le))
+  monitoring_step: 15
+- name: measurements.ambient.project.completed_by_phase
+  monitoring_query: sum by (final_phase) (rate(ambient_sessions_completed_total{exported_namespace='session-listing'}[5m]))
+  monitoring_step: 15
+- name: measurements.ambient.project.phase_transitions
+  monitoring_query: sum by (from_phase, to_phase) (rate(ambient_session_phase_transitions_total{exported_namespace='session-listing'}[5m]))
+  monitoring_step: 15
+- name: measurements.ambient.project.timeouts_rate
+  monitoring_query: sum(rate(ambient_session_timeouts_total{exported_namespace='session-listing'}[5m]))
+  monitoring_step: 15
+- name: measurements.ambient.project.pod_restarts_rate
+  monitoring_query: sum(rate(ambient_pod_restarts_total{exported_namespace='session-listing'}[5m]))
+  monitoring_step: 15
+- name: measurements.ambient.project.token_provision_duration_p99
+  monitoring_query: histogram_quantile(0.99, sum(rate(ambient_token_provision_duration_seconds_bucket{exported_namespace='session-listing'}[5m])) by (le))
+  monitoring_step: 15
+- name: measurements.ambient.project.image_pull_duration_p99
+  monitoring_query: histogram_quantile(0.99, sum(rate(ambient_image_pull_duration_seconds_bucket{exported_namespace='session-listing'}[5m])) by (le))
   monitoring_step: 15

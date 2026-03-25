@@ -208,10 +208,19 @@
 
 # ============================================================================
 # Ambient application metrics (from otel-collector)
+#
+# NOTE: The otel-collector ServiceMonitor does NOT set honorLabels, so
+# Prometheus renames the OTel-emitted "namespace" attribute to
+# "exported_namespace" (which holds the project/namespace name, e.g.
+# "session-listing"). The scrape-injected "namespace" label is always
+# "ambient-code". Use exported_namespace to filter by project.
 # ============================================================================
 
+# --- Reconciliation (labels: phase, success — no exported_namespace) ---
 - name: measurements.ambient.reconcile.duration_avg
-  monitoring_query: sum(rate(ambient_reconcile_duration_seconds_sum{namespace='ambient-code'}[5m])) / sum(rate(ambient_reconcile_duration_seconds_count{namespace='ambient-code'}[5m]))
+  monitoring_query: >-
+    sum(rate(ambient_reconcile_duration_seconds_sum{namespace='ambient-code'}[5m]))
+    / sum(rate(ambient_reconcile_duration_seconds_count{namespace='ambient-code'}[5m]))
   monitoring_step: 15
 
 - name: measurements.ambient.reconcile.duration_p99
@@ -230,6 +239,15 @@
   monitoring_query: sum(rate(ambient_reconcile_retries_total{namespace='ambient-code'}[5m]))
   monitoring_step: 15
 
+# --- Session lifecycle gauges (exported_namespace = project name) ---
+- name: measurements.ambient.sessions.active
+  monitoring_query: sum(ambient_sessions_active{namespace='ambient-code'})
+  monitoring_step: 15
+
+- name: measurements.ambient.sessions.pending
+  monitoring_query: sum(ambient_sessions_pending{namespace='ambient-code'})
+  monitoring_step: 15
+
 - name: measurements.ambient.sessions.by_project
   monitoring_query: sum(ambient_sessions_by_project_total{namespace='ambient-code'})
   monitoring_step: 15
@@ -238,8 +256,84 @@
   monitoring_query: sum(ambient_sessions_by_user_total{namespace='ambient-code'})
   monitoring_step: 15
 
-- name: measurements.ambient.sessions.pending
-  monitoring_query: sum(ambient_sessions_pending{namespace='ambient-code'})
+# --- Session duration histograms (exported_namespace = project name) ---
+- name: measurements.ambient.session_startup.duration_avg
+  monitoring_query: >-
+    sum(rate(ambient_session_startup_duration_seconds_sum{namespace='ambient-code'}[5m]))
+    / sum(rate(ambient_session_startup_duration_seconds_count{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+- name: measurements.ambient.session_startup.duration_p95
+  monitoring_query: histogram_quantile(0.95, sum(rate(ambient_session_startup_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
+  monitoring_step: 15
+
+- name: measurements.ambient.session_startup.duration_p99
+  monitoring_query: histogram_quantile(0.99, sum(rate(ambient_session_startup_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
+  monitoring_step: 15
+
+- name: measurements.ambient.session_total.duration_avg
+  monitoring_query: >-
+    sum(rate(ambient_session_total_duration_seconds_sum{namespace='ambient-code'}[5m]))
+    / sum(rate(ambient_session_total_duration_seconds_count{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+- name: measurements.ambient.session_total.duration_p95
+  monitoring_query: histogram_quantile(0.95, sum(rate(ambient_session_total_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
+  monitoring_step: 15
+
+- name: measurements.ambient.session_total.duration_p99
+  monitoring_query: histogram_quantile(0.99, sum(rate(ambient_session_total_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
+  monitoring_step: 15
+
+# --- Session completion counters (exported_namespace + final_phase) ---
+- name: measurements.ambient.sessions.completed_total
+  monitoring_query: sum(rate(ambient_sessions_completed_total{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+- name: measurements.ambient.sessions.completed_by_phase
+  monitoring_query: sum by (final_phase) (rate(ambient_sessions_completed_total{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+- name: measurements.ambient.sessions.phase_transitions_rate
+  monitoring_query: sum(rate(ambient_session_phase_transitions_total{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+- name: measurements.ambient.sessions.timeouts_rate
+  monitoring_query: sum(rate(ambient_session_timeouts_total{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+# --- Infrastructure provisioning (exported_namespace = project name) ---
+- name: measurements.ambient.token_provision.duration_avg
+  monitoring_query: >-
+    sum(rate(ambient_token_provision_duration_seconds_sum{namespace='ambient-code'}[5m]))
+    / sum(rate(ambient_token_provision_duration_seconds_count{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+- name: measurements.ambient.token_provision.duration_p99
+  monitoring_query: histogram_quantile(0.99, sum(rate(ambient_token_provision_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
+  monitoring_step: 15
+
+- name: measurements.ambient.image_pull.duration_avg
+  monitoring_query: >-
+    sum(rate(ambient_image_pull_duration_seconds_sum{namespace='ambient-code'}[5m]))
+    / sum(rate(ambient_image_pull_duration_seconds_count{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+- name: measurements.ambient.image_pull.duration_p99
+  monitoring_query: histogram_quantile(0.99, sum(rate(ambient_image_pull_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
+  monitoring_step: 15
+
+# --- Error counters (exported_namespace = project name) ---
+- name: measurements.ambient.s3_errors_rate
+  monitoring_query: sum(rate(ambient_s3_errors_total{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+- name: measurements.ambient.token_refresh_errors_rate
+  monitoring_query: sum(rate(ambient_token_refresh_errors_total{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+- name: measurements.ambient.pod_restarts_rate
+  monitoring_query: sum(rate(ambient_pod_restarts_total{namespace='ambient-code'}[5m]))
   monitoring_step: 15
 
 
