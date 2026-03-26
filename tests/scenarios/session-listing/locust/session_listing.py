@@ -83,6 +83,11 @@ def on_test_start(environment, **kwargs):
     # of sessions without consuming pod resources (matching the "many idle" SLO).
     # The backend names sessions as session-<uuid>, so we sleep briefly between
     # requests to avoid name collisions.
+    created_count = 0
+    stopped_count = 0
+    create_failed_count = 0
+    stop_failed_count = 0
+
     for i in range(SESSIONS_TO_CREATE):
         payload = {"displayName": f"lt-session-{i}", "labels": {"loadtest": "true"}}
         for attempt in range(3):
@@ -91,23 +96,40 @@ def on_test_start(environment, **kwargs):
                 name = resp.json().get("name")
                 if name:
                     _created_sessions.append(name)
-                    # Stop the session immediately to prevent runner pod creation
-                    stop_resp = req_lib.post(
-                        f"{base}/{name}/stop", headers=headers,
-                    )
-                    if stop_resp.status_code not in (200, 201, 204):
+                    created_count += 1
+                    # Stop the session immediately to prevent runner pod creation.
+                    # StopSession returns 202 Accepted; 500 can occur if the
+                    # operator is updating the CR concurrently (conflict), so
+                    # retry on 500.
+                    stop_ok = False
+                    for stop_attempt in range(3):
+                        stop_resp = req_lib.post(
+                            f"{base}/{name}/stop", headers=headers,
+                        )
+                        if stop_resp.status_code in (200, 201, 202, 204):
+                            stopped_count += 1
+                            stop_ok = True
+                            break
+                        if stop_resp.status_code == 500 and stop_attempt < 2:
+                            time.sleep(2)
+                    if not stop_ok:
+                        stop_failed_count += 1
                         logger.warning(
-                            "Failed to stop session %s: %s",
+                            "Failed to stop session %s after 3 attempts: %s",
                             name, stop_resp.status_code,
                         )
                 break
             elif resp.status_code == 500 and attempt < 2:
                 time.sleep(1.1)
             else:
+                create_failed_count += 1
                 logger.warning("Failed to create session %d/%d: %s", i + 1, SESSIONS_TO_CREATE, resp.status_code)
                 break
 
-    logger.info("Global setup complete: created and stopped %d/%d sessions", len(_created_sessions), SESSIONS_TO_CREATE)
+    logger.info(
+        "Global setup complete: created=%d stopped=%d create_failed=%d stop_failed=%d (total requested=%d)",
+        created_count, stopped_count, create_failed_count, stop_failed_count, SESSIONS_TO_CREATE,
+    )
 
     if len(_created_sessions) == 0:
         logger.error("No sessions were created — aborting test")
