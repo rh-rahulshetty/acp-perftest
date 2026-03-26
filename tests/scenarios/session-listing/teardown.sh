@@ -4,7 +4,7 @@
 # Sourced by ci-scripts/load-test.sh after the test completes.
 
 PROJECT_NAME="${PROJECT_NAME:-session-listing}"
-SESSION_CREATION_TIMEOUT="${SESSION_CREATION_TIMEOUT:-300}"
+SESSION_CREATION_TIMEOUT="${SESSION_CREATION_TIMEOUT:-10}"
 
 wait_for_agenticsessions "$PROJECT_NAME" "$SESSION_CREATION_TIMEOUT"
 save_agenticsessions "$PROJECT_NAME" "$RUN_ARTIFACTS/agenticsessions"
