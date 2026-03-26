@@ -29,30 +29,11 @@ MANIFESTS_DIR="$LOCAL_DIR/components/manifests"
 
 AMBIENT_NAMESPACE="ambient-code"
 
-function enable_user_workload_monitoring() {
-    info "Enabling user workload monitoring"
-    config_dir=$(mktemp -d)
-    if oc -n openshift-monitoring get cm cluster-monitoring-config; then
-        oc -n openshift-monitoring extract configmap/cluster-monitoring-config --to=$config_dir --keys=config.yaml
-        sed -i '/^enableUserWorkload:/d' $config_dir/config.yaml
-        echo -e "\nenableUserWorkload: true" >> $config_dir/config.yaml
-        oc -n openshift-monitoring set data configmap/cluster-monitoring-config --from-file=$config_dir/config.yaml
-    else
-        cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: cluster-monitoring-config
-  namespace: openshift-monitoring
-data:
-  config.yaml: |
-    enableUserWorkload: true
-EOF
-  fi
-}
-
-
 function setup() {
+    if check_acp_installed "$AMBIENT_NAMESPACE"; then
+        fatal "ACP may already be installed on this cluster. Aborting setup to avoid conflicts."
+    fi
+
     mkdir -p $LOCAL_DIR
     
     # Clone the Ambient Code platform repository
@@ -117,14 +98,6 @@ function setup() {
 
     # Create loadtest service account and RBAC for API access
     setup_loadtest_rbac
-}
-
-function setup_loadtest_rbac() {
-    info "Setting up loadtest service account and RBAC …"
-    export AMBIENT_NAMESPACE
-    envsubst '${AMBIENT_NAMESPACE}' < "config/loadtest-rbac.yaml" \
-        | kubectl apply -f -
-    info "Loadtest RBAC configured"
 }
 
 setup

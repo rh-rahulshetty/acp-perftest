@@ -24,6 +24,38 @@ function fatal() {
 }
 
 
+function check_acp_installed() {
+    # Check whether ACP is already installed on the cluster by looking for:
+    #   1. The AgenticSession CRD
+    #   2. The backend-api deployment in the ambient-code namespace
+    #   3. The agentic-operator deployment in the ambient-code namespace
+    #
+    # Usage: check_acp_installed [namespace]
+    # Returns 0 (and prints a warning) if ACP appears installed, 1 otherwise.
+    local namespace="${1:-ambient-code}"
+    local found=false
+
+    if kubectl get crd agenticsessions.acp.ambient.ai &>/dev/null; then
+        info "AgenticSession CRD detected on the cluster"
+        found=true
+    fi
+
+    if kubectl get deployment backend-api -n "$namespace" &>/dev/null; then
+        info "backend-api deployment found in namespace $namespace"
+        found=true
+    fi
+
+    if kubectl get deployment agentic-operator -n "$namespace" &>/dev/null; then
+        info "agentic-operator deployment found in namespace $namespace"
+        found=true
+    fi
+
+    if [[ "$found" == "true" ]]; then
+        return 0
+    fi
+    return 1
+}
+
 function generate_password() {
     local length="${1:-24}"
     openssl rand -base64 "$length" | tr -d '/+=' | head -c "$length"
@@ -120,6 +152,37 @@ function clone_repository() {
 
     info "Checking out commit $commit in $target_dir..."
     git -C "$target_dir" checkout "$commit"
+}
+
+function setup_loadtest_rbac() {
+    info "Setting up loadtest service account and RBAC …"
+    export AMBIENT_NAMESPACE
+    envsubst '${AMBIENT_NAMESPACE}' < "config/loadtest-rbac.yaml" \
+        | kubectl apply -f -
+    info "Loadtest RBAC configured"
+}
+
+
+function enable_user_workload_monitoring() {
+    info "Enabling user workload monitoring"
+    config_dir=$(mktemp -d)
+    if oc -n openshift-monitoring get cm cluster-monitoring-config; then
+        oc -n openshift-monitoring extract configmap/cluster-monitoring-config --to=$config_dir --keys=config.yaml
+        sed -i '/^enableUserWorkload:/d' $config_dir/config.yaml
+        echo -e "\nenableUserWorkload: true" >> $config_dir/config.yaml
+        oc -n openshift-monitoring set data configmap/cluster-monitoring-config --from-file=$config_dir/config.yaml
+    else
+        cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    enableUserWorkload: true
+EOF
+  fi
 }
 
 function wait_for_agenticsessions() {
