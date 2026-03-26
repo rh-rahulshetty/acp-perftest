@@ -235,13 +235,22 @@ function wait_for_agenticsessions() {
 }
 
 function save_agenticsessions() {
-    # Save each agenticsession resource as individual YAML files.
+    # Save each agenticsession resource as YAML and collect runner pod logs.
+    #
+    # Output layout:
+    #   <output_dir>/
+    #     agenticsessions.log        # summary listing
+    #     yamls/<session>.yaml       # individual CR definitions
+    #     logs/<session>.log         # runner pod logs (if available)
     #
     # Usage: save_agenticsessions <namespace> <output_dir>
     local namespace="$1"
     local output_dir="$2"
 
-    mkdir -p "$output_dir"
+    local yamls_dir="$output_dir/yamls"
+    local logs_dir="$output_dir/logs"
+    mkdir -p "$yamls_dir" "$logs_dir"
+
     info "Saving agenticsession resources from namespace $namespace to $output_dir …"
 
     # Save summary listing before fetching individual resources
@@ -251,8 +260,18 @@ function save_agenticsessions() {
     local count=0
     while IFS= read -r name; do
         [[ -z "$name" ]] && continue
+
+        # Save CR YAML
         oc get agenticsession "$name" -n "$namespace" -o yaml \
-            > "$output_dir/${name}.yaml" 2>/dev/null || true
+            > "$yamls_dir/${name}.yaml" 2>/dev/null || true
+
+        # Collect runner pod logs (pod name follows <name>-runner convention)
+        local pod_name="${name}-runner"
+        if oc get pod "$pod_name" -n "$namespace" &>/dev/null; then
+            oc logs "$pod_name" -n "$namespace" --all-containers \
+                > "$logs_dir/${name}.log" 2>/dev/null || true
+        fi
+
         count=$((count + 1))
     done < <(oc get agenticsessions -n "$namespace" --no-headers -o custom-columns=":metadata.name" 2>/dev/null || true)
 

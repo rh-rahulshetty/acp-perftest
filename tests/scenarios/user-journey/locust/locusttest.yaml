@@ -1,0 +1,31 @@
+# LocustTest CR template for user-journey scenario.
+# Variables are substituted by ci-scripts/load-test.sh via envsubst.
+apiVersion: locust.io/v2
+kind: LocustTest
+metadata:
+  name: ${LOCUST_TEST_NAME}
+  namespace: ${LOCUST_NAMESPACE}
+spec:
+  image: locustio/locust:2.43.3
+  testFiles:
+    configMapRef: ${CONFIGMAP_NAME}
+  env:
+    variables:
+      - name: AUTH_TOKEN
+        value: "${AUTH_TOKEN}"
+      - name: PROJECT_NAME
+        value: "${PROJECT_NAME}"
+      - name: LOADTEST_SA_IDENTITY
+        value: "${LOADTEST_SA_IDENTITY}"
+      - name: DUMMY_REPO_URL
+        value: "${DUMMY_REPO_URL}"
+  master:
+    command: >-
+      --locustfile /lotest/src/user_journey.py
+      --host ${LOCUST_HOST}
+      --users ${TEST_USERS}
+      --spawn-rate ${TEST_SPAWN_RATE}
+      --run-time ${TEST_RUN_TIME}
+  worker:
+    command: "--locustfile /lotest/src/user_journey.py"
+    replicas: ${TEST_WORKERS}
