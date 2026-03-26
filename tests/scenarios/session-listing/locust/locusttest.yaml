@@ -6,7 +6,7 @@ metadata:
   name: ${LOCUST_TEST_NAME}
   namespace: ${LOCUST_NAMESPACE}
 spec:
-  image: locustio/locust:2.43.3
+  image: mirror.gcr.io/locustio/locust:2.43.3
   testFiles:
     configMapRef: ${CONFIGMAP_NAME}
   env:

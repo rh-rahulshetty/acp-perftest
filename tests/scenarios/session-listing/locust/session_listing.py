@@ -78,9 +78,11 @@ def on_test_start(environment, **kwargs):
         logger.error("Failed to set runner secrets for %s: %s %s", PROJECT_NAME, resp.status_code, resp.text)
 
 
-    # Create sessions sequentially. The backend names sessions as
-    # session-<unix_seconds>, so we sleep briefly between requests
-    # to avoid name collisions.
+    # Create sessions sequentially, then stop each one so that no runner pods
+    # are left running on the cluster. This allows scaling to hundreds/thousands
+    # of sessions without consuming pod resources (matching the "many idle" SLO).
+    # The backend names sessions as session-<uuid>, so we sleep briefly between
+    # requests to avoid name collisions.
     for i in range(SESSIONS_TO_CREATE):
         payload = {"displayName": f"lt-session-{i}", "labels": {"loadtest": "true"}}
         for attempt in range(3):
@@ -89,6 +91,15 @@ def on_test_start(environment, **kwargs):
                 name = resp.json().get("name")
                 if name:
                     _created_sessions.append(name)
+                    # Stop the session immediately to prevent runner pod creation
+                    stop_resp = req_lib.post(
+                        f"{base}/{name}/stop", headers=headers,
+                    )
+                    if stop_resp.status_code not in (200, 201, 204):
+                        logger.warning(
+                            "Failed to stop session %s: %s",
+                            name, stop_resp.status_code,
+                        )
                 break
             elif resp.status_code == 500 and attempt < 2:
                 time.sleep(1.1)
@@ -96,7 +107,7 @@ def on_test_start(environment, **kwargs):
                 logger.warning("Failed to create session %d/%d: %s", i + 1, SESSIONS_TO_CREATE, resp.status_code)
                 break
 
-    logger.info("Global setup complete: created %d/%d sessions", len(_created_sessions), SESSIONS_TO_CREATE)
+    logger.info("Global setup complete: created and stopped %d/%d sessions", len(_created_sessions), SESSIONS_TO_CREATE)
 
     if len(_created_sessions) == 0:
         logger.error("No sessions were created — aborting test")
