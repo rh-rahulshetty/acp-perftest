@@ -285,8 +285,8 @@ def _metric_subtitle(metric_key):
     return ""
 
 
-def _make_avg_bar(title, metric_key, scenario_names, scenario_stats, y_label="Value"):
-    """Simple bar chart showing mean value per scenario."""
+def _build_avg_bar_fig(title, metric_key, scenario_names, scenario_stats, y_label="Value"):
+    """Build a bar chart figure showing mean value per scenario. Returns go.Figure."""
     fig = go.Figure()
     values = [scenario_stats.get(sn, {}).get(metric_key, {}).get("mean", 0) for sn in scenario_names]
     bytes_mode = is_bytes_metric(metric_key) and any(abs(v) >= 1024 for v in values)
@@ -307,15 +307,16 @@ def _make_avg_bar(title, metric_key, scenario_names, scenario_stats, y_label="Va
         height=_CHART_LAYOUT["height"],
         margin=dict(l=50, r=20, t=90 if subtitle else 60, b=40),
     )
-    return dcc.Graph(figure=fig)
+    return fig
 
 
-def _make_ts_line(title, csv_metric, scenario_names, scenarios_data, y_label="Value"):
-    """Time-series line chart showing each trial as a separate line.
+def _make_avg_bar(title, metric_key, scenario_names, scenario_stats, y_label="Value"):
+    """Simple bar chart showing mean value per scenario."""
+    return dcc.Graph(figure=_build_avg_bar_fig(title, metric_key, scenario_names, scenario_stats, y_label))
 
-    Lines are labeled as 'scenario / trial_label'. When a scenario has only one
-    trial, just the scenario name is shown.
-    """
+
+def _build_ts_line_fig(title, csv_metric, scenario_names, scenarios_data, y_label="Value"):
+    """Build a time-series line chart figure. Returns go.Figure."""
     fig = go.Figure()
     bytes_mode = is_bytes_metric(csv_metric)
     any_large = False
@@ -351,7 +352,12 @@ def _make_ts_line(title, csv_metric, scenario_names, scenarios_data, y_label="Va
     else:
         layout["title"] = title
     fig.update_layout(xaxis_title="Elapsed (s)", yaxis_title=y_label, **layout)
-    return dcc.Graph(figure=fig)
+    return fig
+
+
+def _make_ts_line(title, csv_metric, scenario_names, scenarios_data, y_label="Value"):
+    """Time-series line chart showing each trial as a separate line."""
+    return dcc.Graph(figure=_build_ts_line_fig(title, csv_metric, scenario_names, scenarios_data, y_label))
 
 
 def _format_table_value(val, bytes_mode):
@@ -482,9 +488,23 @@ def build_overview_dashboard(state):
         className="ag-theme-alpine",
     )
 
+    export_btn = dbc.Button(
+        "Export Report", id="btn-export-open", color="primary", size="sm", className="ms-3",
+    )
+    export_zip_btn = dbc.Button(
+        "Export Artifacts (ZIP)", id="btn-export-zip", color="secondary", size="sm", className="ms-2",
+    )
+
     return html.Div(
         [
-            html.H4("Overview - All Metrics Comparison", className="mb-3"),
+            html.Div(
+                [
+                    html.H4("Overview - All Metrics Comparison", className="mb-3 d-inline"),
+                    export_btn,
+                    export_zip_btn,
+                ],
+                className="d-flex align-items-center mb-3",
+            ),
             html.P("Mean values across scenarios (averaged across trials per scenario)."),
             search_input,
             overview_table,
@@ -1005,11 +1025,55 @@ def build_folder_browser_modal():
     )
 
 
+def build_export_modal():
+    """Modal for configuring report export."""
+    return dbc.Modal(
+        [
+            dbc.ModalHeader(dbc.ModalTitle("Export Report")),
+            dbc.ModalBody([
+                dbc.Label("Report Title"),
+                dbc.Input(
+                    id="export-title",
+                    value="Performance Test Report",
+                    className="mb-3",
+                ),
+                dbc.Label("Description (Markdown)"),
+                dbc.Textarea(
+                    id="export-description",
+                    placeholder="## Summary\n\nBrief description of the test...\n\n- Key finding 1\n- Key finding 2",
+                    style={"height": "200px", "fontFamily": "monospace"},
+                    className="mb-3",
+                ),
+                dbc.Label("Format"),
+                dbc.Select(
+                    id="export-format",
+                    options=[
+                        {"label": "Word Document (.docx)", "value": "docx"},
+                        {"label": "PDF (.pdf)", "value": "pdf"},
+                    ],
+                    value="docx",
+                    className="mb-3",
+                ),
+            ]),
+            dbc.ModalFooter([
+                dbc.Button("Cancel", id="btn-export-cancel", color="secondary", className="me-2"),
+                dbc.Button("Export", id="btn-export-run", color="primary"),
+            ]),
+        ],
+        id="export-modal",
+        is_open=False,
+        size="lg",
+    )
+
+
 app.layout = dbc.Container(
     [
-        dcc.Store(id="store-state", data=load_state()),
+        dcc.Store(id="store-state", data={"trials": [], "custom_dashboards": [], "scenario_order": []}),
         dcc.Store(id="store-browse-path", data=_DEFAULT_BROWSE_ROOT),
+        dcc.Download(id="download-report"),
+        dcc.Download(id="download-zip"),
         build_folder_browser_modal(),
+        build_export_modal(),
         dbc.Row(
             [
                 dbc.Col(
@@ -1225,7 +1289,6 @@ def reorder_scenarios(up_clicks, down_clicks, state):
         return dash.no_update
 
     state["scenario_order"] = scenarios
-    save_state(state)
     return state
 
 
@@ -1276,7 +1339,6 @@ def scan_folder(n_clicks, parent_path, state):
     # Set default scenario order using natural sort
     scenarios = sorted(set(t["scenario"] for t in new_trials), key=_natural_sort_key)
     state["scenario_order"] = scenarios
-    save_state(state)
 
     return state, dbc.Alert(
         f"Loaded {len(new_trials)} trial(s) across {len(scenarios)} scenario(s): "
@@ -1295,7 +1357,6 @@ def scan_folder(n_clicks, parent_path, state):
 def clear_trials(n_clicks, state):
     state["trials"] = []
     state["scenario_order"] = []
-    save_state(state)
     return state
 
 
@@ -1331,6 +1392,280 @@ def filter_overview_table(search_value):
         "tooltipShowDelay": 300,
         "quickFilterText": search_value or "",
     }
+
+
+# ---------------------------------------------------------------------------
+# Callbacks — export report
+# ---------------------------------------------------------------------------
+
+@app.callback(
+    Output("export-modal", "is_open"),
+    Input("btn-export-open", "n_clicks"),
+    Input("btn-export-cancel", "n_clicks"),
+    Input("btn-export-run", "n_clicks"),
+    State("export-modal", "is_open"),
+    prevent_initial_call=True,
+)
+def toggle_export_modal(open_clicks, cancel_clicks, run_clicks, is_open):
+    if not callback_context.triggered_id:
+        return dash.no_update
+    trigger = callback_context.triggered_id
+    if trigger == "btn-export-open" and open_clicks:
+        return True
+    if trigger in ("btn-export-cancel", "btn-export-run") and (cancel_clicks or run_clicks):
+        return False
+    return dash.no_update
+
+
+@app.callback(
+    Output("download-report", "data"),
+    Input("btn-export-run", "n_clicks"),
+    State("export-title", "value"),
+    State("export-description", "value"),
+    State("export-format", "value"),
+    State("store-state", "data"),
+    prevent_initial_call=True,
+)
+def export_report(n_clicks, title, description, fmt, state):
+    if not n_clicks:
+        return dash.no_update
+    from exporter import export_docx, export_pdf
+
+    scenario_names, scenarios_data, scenario_stats = _get_scenario_stats(state)
+
+    all_keys = set()
+    for stats in scenario_stats.values():
+        all_keys.update(stats.keys())
+    all_keys = sorted(all_keys)
+
+    row_data = []
+    for key in all_keys:
+        full_name = get_metric_full_name(key)
+        vals = {}
+        for sname in scenario_names:
+            vals[sname] = scenario_stats.get(sname, {}).get(key, {}).get("mean", None)
+        bytes_mode = is_bytes_metric(key) and any(
+            v is not None and abs(v) >= 1024 for v in vals.values()
+        )
+        row = {"metric_pretty": prettify_metric_name(key.replace(".", "_")), "metric_key": full_name}
+        for sname in scenario_names:
+            row[sname] = _format_table_value(vals[sname], bytes_mode)
+        row_data.append(row)
+
+    # Build chart figures and convert to PNG bytes
+    chart_sections = _build_export_charts(scenario_names, scenarios_data, scenario_stats)
+
+    title = title or "Performance Test Report"
+    description = description or ""
+
+    if fmt == "pdf":
+        content = export_pdf(title, description, row_data, scenario_names, chart_sections)
+        filename = "performance_report.pdf"
+    else:
+        content = export_docx(title, description, row_data, scenario_names, chart_sections)
+        filename = "performance_report.docx"
+
+    return dcc.send_bytes(content, filename)
+
+
+@app.callback(
+    Output("download-zip", "data"),
+    Input("btn-export-zip", "n_clicks"),
+    State("store-state", "data"),
+    prevent_initial_call=True,
+)
+def export_zip_artifacts(n_clicks, state):
+    if not n_clicks:
+        return dash.no_update
+    from exporter import export_zip
+
+    scenario_names, scenarios_data, scenario_stats = _get_scenario_stats(state)
+
+    all_keys = set()
+    for stats in scenario_stats.values():
+        all_keys.update(stats.keys())
+    all_keys = sorted(all_keys)
+
+    row_data = []
+    for key in all_keys:
+        full_name = get_metric_full_name(key)
+        vals = {}
+        for sname in scenario_names:
+            vals[sname] = scenario_stats.get(sname, {}).get(key, {}).get("mean", None)
+        bytes_mode = is_bytes_metric(key) and any(
+            v is not None and abs(v) >= 1024 for v in vals.values()
+        )
+        row = {"metric_pretty": prettify_metric_name(key.replace(".", "_")), "metric_key": full_name}
+        for sname in scenario_names:
+            row[sname] = _format_table_value(vals[sname], bytes_mode)
+        row_data.append(row)
+
+    chart_sections = _build_export_charts(scenario_names, scenarios_data, scenario_stats)
+    content = export_zip(row_data, scenario_names, chart_sections)
+    return dcc.send_bytes(content, "performance_artifacts.zip")
+
+
+def _fig_to_png(fig, width=700, height=400):
+    """Convert a plotly figure to PNG bytes."""
+    return fig.to_image(format="png", width=width, height=height)
+
+
+def _add_bar(charts, title, key, scenario_names, scenario_stats, ylabel):
+    """Add a bar chart if data exists for at least one scenario."""
+    if any(scenario_stats.get(s, {}).get(key) for s in scenario_names):
+        fig = _build_avg_bar_fig(title, key, scenario_names, scenario_stats, ylabel)
+        charts.append((title, _fig_to_png(fig)))
+
+
+def _add_line(charts, title, csv_metric, scenario_names, scenarios_data, ylabel):
+    """Add a line chart if it has any traces."""
+    fig = _build_ts_line_fig(title, csv_metric, scenario_names, scenarios_data, ylabel)
+    if fig.data:
+        charts.append((title, _fig_to_png(fig)))
+
+
+def _build_export_charts(scenario_names, scenarios_data, scenario_stats):
+    """Build all chart figures for export, grouped by section.
+
+    Returns list of (section_title, [(chart_title, png_bytes), ...]).
+    """
+    sections = []
+
+    # --- Ambient ---
+    ambient_charts = []
+
+    # Namespace totals
+    _add_bar(ambient_charts, "Namespace CPU Total", "ambient.namespace.cpu_total",
+             scenario_names, scenario_stats, "CPU (cores)")
+    _add_bar(ambient_charts, "Namespace Memory Total", "ambient.namespace.memory_total",
+             scenario_names, scenario_stats, "Memory (bytes)")
+
+    # Per-component CPU & Memory
+    components = [
+        ("backend-api", "Backend Api"), ("public-api", "Public Api"),
+        ("agentic-operator", "Agentic Operator"), ("ambient-api-server", "Ambient Api Server"),
+        ("postgresql", "PostgreSQL"), ("minio", "MinIO"),
+        ("frontend", "Frontend"), ("otel-collector", "Otel Collector"),
+        ("unleash", "Unleash"),
+    ]
+    for comp_key, comp_name in components:
+        _add_bar(ambient_charts, f"{comp_name} CPU", f"ambient.{comp_key}.cpu",
+                 scenario_names, scenario_stats, "CPU (cores)")
+        _add_bar(ambient_charts, f"{comp_name} Memory", f"ambient.{comp_key}.memory",
+                 scenario_names, scenario_stats, "Memory (bytes)")
+
+    # Session startup & image pull
+    _add_bar(ambient_charts, "Session Startup Duration Avg", "ambient.session_startup.duration_avg",
+             scenario_names, scenario_stats, "Duration (s)")
+    _add_bar(ambient_charts, "Image Pull Duration Avg", "ambient.image_pull.duration_avg",
+             scenario_names, scenario_stats, "Duration (s)")
+    _add_line(ambient_charts, "Session Startup Avg Over Time", "measurements_ambient_session_startup_duration_avg",
+              scenario_names, scenarios_data, "Duration (s)")
+    _add_line(ambient_charts, "Session Startup P99 Over Time", "measurements_ambient_session_startup_duration_p99",
+              scenario_names, scenarios_data, "Duration (s)")
+
+    # Reconciliation
+    _add_bar(ambient_charts, "Reconcile Duration Avg", "ambient.reconcile.duration_avg",
+             scenario_names, scenario_stats, "Duration (s)")
+    _add_line(ambient_charts, "Reconcile Rate Over Time", "measurements_ambient_reconcile_rate",
+              scenario_names, scenarios_data, "ops/s")
+
+    # Session counts
+    _add_line(ambient_charts, "Active Sessions", "measurements_ambient_sessions_active",
+              scenario_names, scenarios_data, "Count")
+    _add_line(ambient_charts, "Pending Sessions", "measurements_ambient_sessions_pending",
+              scenario_names, scenarios_data, "Count")
+
+    if ambient_charts:
+        sections.append(("Ambient Platform Metrics", ambient_charts))
+
+    # --- Cluster ---
+    cluster_charts = []
+
+    # Resource bars
+    _add_bar(cluster_charts, "Cluster CPU Usage Rate", "cluster.cpu_usage_rate",
+             scenario_names, scenario_stats, "CPU (cores)")
+    _add_bar(cluster_charts, "Cluster Memory RSS", "cluster.memory_rss_total",
+             scenario_names, scenario_stats, "Memory (bytes)")
+    _add_bar(cluster_charts, "Network Throughput", "cluster.network_bytes_total",
+             scenario_names, scenario_stats, "Bytes")
+    _add_bar(cluster_charts, "Disk Throughput", "cluster.disk_throughput_total",
+             scenario_names, scenario_stats, "Bytes")
+
+    # Resource time-series
+    _add_line(cluster_charts, "CPU Usage Over Time", "measurements_cluster_cpu_usage_rate",
+              scenario_names, scenarios_data, "CPU (cores)")
+    _add_line(cluster_charts, "Memory RSS Over Time", "measurements_cluster_memory_rss_total",
+              scenario_names, scenarios_data, "Bytes")
+    _add_line(cluster_charts, "Worker Avg CPU Pct", "measurements_cluster_workers_avg_cpu_pct",
+              scenario_names, scenarios_data, "%")
+    _add_line(cluster_charts, "Running Pods on Workers", "measurements_cluster_running_pods_on_workers",
+              scenario_names, scenarios_data, "Count")
+
+    # API server & etcd
+    _add_line(cluster_charts, "API Server Request Rate", "measurements_apiserver_request_total_rate",
+              scenario_names, scenarios_data, "req/s")
+    _add_line(cluster_charts, "etcd Request Duration Avg", "measurements_etcd_request_duration_avg",
+              scenario_names, scenarios_data, "Duration (s)")
+
+    # Pod & node counts
+    _add_bar(cluster_charts, "Avg Worker Node Count", "cluster.worker_node_count",
+             scenario_names, scenario_stats, "Count")
+    _add_bar(cluster_charts, "Avg Pod Count", "cluster.pod_count",
+             scenario_names, scenario_stats, "Count")
+    _add_line(cluster_charts, "Cluster Pod Count Over Time", "measurements_cluster_pod_count",
+              scenario_names, scenarios_data, "Count")
+    _add_line(cluster_charts, "Worker Node Count Over Time", "measurements_cluster_worker_node_count",
+              scenario_names, scenarios_data, "Count")
+
+    if cluster_charts:
+        sections.append(("Cluster Metrics", cluster_charts))
+
+    # --- Locust ---
+    locust_charts = []
+
+    # Response time & throughput
+    _add_line(locust_charts, "Avg Response Time", "results_locust_requests_avg_response_time_total",
+              scenario_names, scenarios_data, "ms")
+    _add_line(locust_charts, "Requests Per Second", "results_locust_requests_current_rps_total",
+              scenario_names, scenarios_data, "req/s")
+
+    # Errors
+    _add_line(locust_charts, "Fail Ratio", "results_locust_requests_fail_ratio",
+              scenario_names, scenarios_data, "Ratio")
+    _add_line(locust_charts, "Failures Per Second", "results_locust_requests_current_fail_per_sec_total",
+              scenario_names, scenarios_data, "fails/s")
+
+    # Cumulative
+    _add_line(locust_charts, "Total Requests", "results_locust_requests_num_requests_total",
+              scenario_names, scenarios_data, "Count")
+    _add_line(locust_charts, "Total Failures", "results_locust_requests_num_failures_total",
+              scenario_names, scenarios_data, "Count")
+
+    # Endpoint-specific
+    _add_line(locust_charts, "Endpoint Avg Response Time",
+              "results_GET_agentic-sessions_list_locust_requests_avg_response_time",
+              scenario_names, scenarios_data, "ms")
+    _add_line(locust_charts, "Endpoint RPS",
+              "results_GET_agentic-sessions_list_locust_requests_current_rps",
+              scenario_names, scenarios_data, "req/s")
+
+    # Worker resources
+    _add_bar(locust_charts, "Workers CPU", "locust.workers.cpu",
+             scenario_names, scenario_stats, "CPU (cores)")
+    _add_bar(locust_charts, "Workers Memory", "locust.workers.memory",
+             scenario_names, scenario_stats, "Memory (bytes)")
+
+    # Users & content
+    _add_line(locust_charts, "Active Users", "results_locust_users",
+              scenario_names, scenarios_data, "Users")
+    _add_line(locust_charts, "Avg Content Length", "results_locust_requests_avg_content_length_total",
+              scenario_names, scenarios_data, "Bytes")
+
+    if locust_charts:
+        sections.append(("Locust Load Test Metrics", locust_charts))
+
+    return sections
 
 
 @app.callback(
