@@ -293,10 +293,16 @@ def flatten_benchmark_measurements(measurements, prefix=""):
 
 
 def get_benchmark_stats(trial_path):
-    """Load and flatten benchmark stats for a trial."""
+    """Load and flatten benchmark stats for a trial.
+
+    Includes both monitoring.measurements and monitoring.results sections.
+    """
     data = load_benchmark(trial_path)
-    measurements = data.get("monitoring", {}).get("measurements", {})
-    return flatten_benchmark_measurements(measurements)
+    monitoring = data.get("monitoring", {})
+    stats = flatten_benchmark_measurements(monitoring.get("measurements", {}))
+    results = flatten_benchmark_measurements(monitoring.get("results", {}))
+    stats.update(results)
+    return stats
 
 
 def list_csv_metrics(trial_path):
