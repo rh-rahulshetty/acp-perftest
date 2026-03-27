@@ -22,6 +22,7 @@ from data_loader import (
     get_all_available_metrics,
     get_all_benchmark_metric_keys,
     get_metric_categories,
+    get_metric_full_name,
     get_scenarios_data,
     load_csv_metric_per_trial,
     load_state,
@@ -274,6 +275,14 @@ def _get_scenario_stats(state):
     return scenario_names, scenarios_data, scenario_stats
 
 
+def _metric_subtitle(metric_key):
+    """Build a subtitle string showing the full metric name."""
+    full_name = get_metric_full_name(metric_key)
+    if full_name != metric_key:
+        return f"<span style='font-size:10px;color:#888'>{full_name}</span>"
+    return ""
+
+
 def _make_avg_bar(title, metric_key, scenario_names, scenario_stats, y_label="Value"):
     """Simple bar chart showing mean value per scenario."""
     fig = go.Figure()
@@ -284,10 +293,13 @@ def _make_avg_bar(title, metric_key, scenario_names, scenario_stats, y_label="Va
         text=[f"{v:.4f}" for v in values],
         textposition="outside",
     ))
+    subtitle = _metric_subtitle(metric_key)
     fig.update_layout(
-        title=title, xaxis_title="Scenario", yaxis_title=y_label,
+        title={"text": f"{title}<br>{subtitle}" if subtitle else title, "x": 0.5},
+        xaxis_title="Scenario", yaxis_title=y_label,
         showlegend=False,
-        **{k: v for k, v in _CHART_LAYOUT.items() if k != "legend"},
+        height=_CHART_LAYOUT["height"],
+        margin=dict(l=50, r=20, t=90 if subtitle else 60, b=40),
     )
     return dcc.Graph(figure=fig)
 
@@ -317,16 +329,27 @@ def _make_ts_line(title, csv_metric, scenario_names, scenarios_data, y_label="Va
                 legendgroup=sname,
             ))
         color_idx += 1
-    fig.update_layout(title=title, xaxis_title="Elapsed (s)", yaxis_title=y_label, **_CHART_LAYOUT)
+    subtitle = _metric_subtitle(csv_metric)
+    layout = dict(**_CHART_LAYOUT)
+    if subtitle:
+        layout["title"] = {"text": f"{title}<br>{subtitle}", "x": 0.5}
+        layout["margin"] = dict(l=50, r=20, t=90, b=40)
+    else:
+        layout["title"] = title
+    fig.update_layout(xaxis_title="Elapsed (s)", yaxis_title=y_label, **layout)
     return dcc.Graph(figure=fig)
 
 
 def _make_comparison_table(metric_keys, scenario_names, scenario_stats, table_id):
-    """AG Grid table: metrics as rows, one mean column per scenario."""
+    """AG Grid table: metrics as rows, one mean column per scenario.
+
+    Hovering on any cell in a row shows the full dotted metric name as a tooltip.
+    """
     row_data = []
     for key in metric_keys:
         pretty = prettify_metric_name(key.replace(".", "_"))
-        row = {"metric": pretty}
+        full_name = get_metric_full_name(key)
+        row = {"metric": pretty, "metric_key": full_name}
         for sname in scenario_names:
             val = scenario_stats.get(sname, {}).get(key, {}).get("mean", None)
             row[sname] = round(val, 6) if val is not None else None
@@ -334,10 +357,13 @@ def _make_comparison_table(metric_keys, scenario_names, scenario_stats, table_id
 
     col_defs = [
         {"field": "metric", "headerName": "Metric", "pinned": "left", "width": 280,
-         "filter": True, "sortable": True},
+         "filter": True, "sortable": True,
+         "tooltipField": "metric_key"},
+        {"field": "metric_key", "hide": True},
     ] + [
         {"field": sname, "headerName": sname, "width": 150, "filter": "agNumberColumnFilter",
          "sortable": True,
+         "tooltipField": "metric_key",
          "valueFormatter": {"function": "params.value != null ? d3.format('.6f')(params.value) : ''"}}
         for sname in scenario_names
     ]
@@ -347,7 +373,12 @@ def _make_comparison_table(metric_keys, scenario_names, scenario_stats, table_id
         rowData=row_data,
         columnDefs=col_defs,
         defaultColDef={"resizable": True, "sortable": True, "filter": True},
-        dashGridOptions={"domLayout": "autoHeight", "pagination": True, "paginationPageSize": 25},
+        dashGridOptions={
+            "domLayout": "autoHeight",
+            "pagination": True,
+            "paginationPageSize": 25,
+            "tooltipShowDelay": 300,
+        },
         style={"width": "100%"},
         className="ag-theme-alpine",
     )
@@ -372,9 +403,10 @@ def build_overview_dashboard(state):
 
     row_data = []
     for key in all_keys:
+        full_name = get_metric_full_name(key)
         row = {
-            "metric": key,
             "metric_pretty": prettify_metric_name(key.replace(".", "_")),
+            "metric_key": full_name,
         }
         for sname in scenario_names:
             val = scenario_stats.get(sname, {}).get(key, {}).get("mean", None)
@@ -383,10 +415,13 @@ def build_overview_dashboard(state):
 
     col_defs = [
         {"field": "metric_pretty", "headerName": "Metric", "pinned": "left", "width": 300,
-         "filter": True, "sortable": True},
+         "filter": True, "sortable": True,
+         "tooltipField": "metric_key"},
+        {"field": "metric_key", "hide": True},
     ] + [
         {"field": sname, "headerName": sname, "width": 150, "filter": "agNumberColumnFilter",
          "sortable": True,
+         "tooltipField": "metric_key",
          "valueFormatter": {"function": "params.value != null ? d3.format('.6f')(params.value) : ''"}}
         for sname in scenario_names
     ]
@@ -396,7 +431,12 @@ def build_overview_dashboard(state):
         rowData=row_data,
         columnDefs=col_defs,
         defaultColDef={"resizable": True, "sortable": True, "filter": True},
-        dashGridOptions={"domLayout": "autoHeight", "pagination": True, "paginationPageSize": 25},
+        dashGridOptions={
+            "domLayout": "autoHeight",
+            "pagination": True,
+            "paginationPageSize": 25,
+            "tooltipShowDelay": 300,
+        },
         style={"width": "100%"},
         className="ag-theme-alpine",
     )

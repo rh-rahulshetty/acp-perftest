@@ -6,9 +6,163 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import yaml
 
 
 STATE_FILE = os.path.join(os.path.dirname(__file__), "dashboard_state.json")
+GLOBAL_CONFIG = os.path.join(os.path.dirname(__file__), "..", "..", "config", "cluster_read_config.yaml")
+SCENARIOS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "tests", "scenarios")
+
+# Metric lookup: maps dotted key -> {name, query, step}
+_METRIC_LOOKUP = None
+# CSV column header cache: csv_stem -> dotted metric name
+_CSV_HEADER_CACHE = {}
+
+
+def _load_config_entries(config_path):
+    """Load entries from a single cluster_read_config.yaml file."""
+    path = os.path.abspath(config_path)
+    if not os.path.exists(path):
+        return []
+    with open(path) as f:
+        entries = yaml.safe_load(f)
+    return entries if isinstance(entries, list) else []
+
+
+def get_metric_lookup():
+    """Build lookup from all config files (global + scenario-specific).
+
+    Loads the global cluster_read_config.yaml and any scenario-specific configs
+    found under tests/scenarios/*/cluster_read_config.yaml.
+
+    Keys are dotted metric names (e.g. 'measurements.ambient.agentic-operator.cpu').
+    Values are dicts with 'name', 'query', 'step'.
+
+    Also indexes by:
+      - benchmark key (without 'measurements.' / 'results.' prefix)
+      - CSV filename stem (underscores instead of dots)
+    """
+    global _METRIC_LOOKUP
+    if _METRIC_LOOKUP is not None:
+        return _METRIC_LOOKUP
+
+    _METRIC_LOOKUP = {}
+
+    # Load global config
+    all_entries = _load_config_entries(GLOBAL_CONFIG)
+
+    # Load scenario-specific configs
+    scenarios_path = os.path.abspath(SCENARIOS_DIR)
+    if os.path.isdir(scenarios_path):
+        for scenario_dir in sorted(Path(scenarios_path).iterdir()):
+            if not scenario_dir.is_dir():
+                continue
+            config = scenario_dir / "cluster_read_config.yaml"
+            if config.exists():
+                all_entries.extend(_load_config_entries(str(config)))
+
+    for entry in all_entries:
+        name = entry.get("name", "")
+        query = entry.get("monitoring_query", entry.get("command", ""))
+        step = entry.get("monitoring_step", "")
+        info = {"name": name, "query": query.strip() if isinstance(query, str) else str(query), "step": step}
+
+        # Index by full dotted name
+        _METRIC_LOOKUP[name] = info
+
+        # Index by benchmark key (strip 'measurements.' or 'results.' prefix)
+        for prefix in ["measurements.", "results."]:
+            if name.startswith(prefix):
+                short = name[len(prefix):]
+                _METRIC_LOOKUP[short] = info
+                break
+
+        # Index by CSV filename stem (dots -> underscores)
+        csv_stem = name.replace(".", "_")
+        _METRIC_LOOKUP[csv_stem] = info
+
+    return _METRIC_LOOKUP
+
+
+def get_metric_query(metric_key):
+    """Look up the Prometheus query for a metric key.
+
+    Accepts dotted keys, benchmark keys, or CSV filename stems.
+    Also tries the dotted name from CSV header cache if direct lookup fails.
+    Returns the query string, or empty string if not found.
+    """
+    lookup = get_metric_lookup()
+    info = lookup.get(metric_key, {})
+    if info:
+        return info.get("query", "")
+
+    # Try via CSV header cache → dotted name → config lookup
+    dotted = _CSV_HEADER_CACHE.get(metric_key, "")
+    if dotted:
+        info = lookup.get(dotted, {})
+        return info.get("query", "")
+
+    return ""
+
+
+def read_csv_metric_name(csv_path):
+    """Read the second column header from a CSV file to get the dotted metric name.
+
+    CSV files use the dotted metric name as the column header (e.g.
+    'measurements.ambient.backend-api.cpu'), which is the most reliable
+    source for the canonical metric name.
+    """
+    try:
+        with open(csv_path) as f:
+            header = f.readline().strip()
+        cols = header.split(",")
+        if len(cols) >= 2:
+            return cols[1]
+    except Exception:
+        pass
+    return ""
+
+
+def _cache_csv_headers(trial_path):
+    """Read all CSV column headers in a trial's monitoring/ dir and cache them."""
+    monitoring = Path(trial_path) / "monitoring"
+    if not monitoring.is_dir():
+        return
+    for csv_file in monitoring.glob("*.csv"):
+        stem = csv_file.stem
+        if stem not in _CSV_HEADER_CACHE:
+            dotted = read_csv_metric_name(str(csv_file))
+            if dotted:
+                _CSV_HEADER_CACHE[stem] = dotted
+
+
+def get_metric_full_name(metric_key):
+    """Look up the full dotted metric name for a key.
+
+    Resolution order:
+      1. Config lookup (global + scenario-specific cluster_read_config.yaml)
+      2. CSV column header cache (populated when trials are loaded)
+      3. Falls back to the key itself
+    """
+    lookup = get_metric_lookup()
+    info = lookup.get(metric_key, {})
+    if info:
+        return info.get("name", metric_key)
+
+    # Try CSV header cache
+    if metric_key in _CSV_HEADER_CACHE:
+        return _CSV_HEADER_CACHE[metric_key]
+
+    return metric_key
+
+
+def reset_metric_lookup():
+    """Reset the metric lookup cache so it gets rebuilt on next access.
+
+    Call this when loading new trial data that may come from different scenarios.
+    """
+    global _METRIC_LOOKUP
+    _METRIC_LOOKUP = None
 
 
 def load_state():
@@ -94,6 +248,11 @@ def scan_parent_folder(parent_path):
 
     if not trials:
         return [], "No valid trials found in any subdirectory"
+
+    # Cache CSV column headers for metric name resolution
+    for trial in trials:
+        _cache_csv_headers(trial["path"])
+
     scenarios = set(t["scenario"] for t in trials)
     return trials, f"Found {len(trials)} trial(s) across {len(scenarios)} scenario(s)"
 
