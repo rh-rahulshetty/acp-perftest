@@ -1505,9 +1505,9 @@ def export_zip_artifacts(n_clicks, state):
     return dcc.send_bytes(content, "performance_artifacts.zip")
 
 
-def _fig_to_png(fig, width=700, height=400):
-    """Convert a plotly figure to PNG bytes."""
-    return fig.to_image(format="png", width=width, height=height)
+def _fig_to_png(fig, width=1000, height=500):
+    """Convert a plotly figure to PNG bytes at high resolution."""
+    return fig.to_image(format="png", width=width, height=height, scale=2)
 
 
 def _add_bar(charts, title, key, scenario_names, scenario_stats, ylabel):

@@ -54,18 +54,65 @@ def _render_markdown_docx(doc, description):
                     p.add_run(part)
 
 
-def export_docx(title, description, row_data, scenario_names, chart_sections=None):
-    """Generate a DOCX report and return bytes.
+def _set_page_landscape_wide(doc):
+    """Set document to wide landscape with narrow margins for Google Docs pageless."""
+    from docx.shared import Inches, Cm
+    from docx.oxml.ns import qn
 
-    Layout: title -> description -> charts (2-col, grouped by section) -> table.
+    section = doc.sections[0]
+    # Landscape A4 wide
+    section.page_width = Inches(16.5)
+    section.page_height = Inches(11.7)
+    section.left_margin = Cm(1.5)
+    section.right_margin = Cm(1.5)
+    section.top_margin = Cm(1.5)
+    section.bottom_margin = Cm(1.5)
+
+    return section
+
+
+def _make_borderless_table(doc, rows, cols):
+    """Create a borderless table for image grid layout."""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    table = doc.add_table(rows=rows, cols=cols)
+    tbl_pr = table._tbl.tblPr
+    borders_elem = OxmlElement("w:tblBorders")
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        edge_elem = OxmlElement(f"w:{edge}")
+        edge_elem.set(qn("w:val"), "none")
+        edge_elem.set(qn("w:sz"), "0")
+        borders_elem.append(edge_elem)
+    tbl_pr.append(borders_elem)
+
+    # Set table to full width
+    tbl_w = OxmlElement("w:tblW")
+    tbl_w.set(qn("w:type"), "pct")
+    tbl_w.set(qn("w:w"), "5000")  # 100% in fifths of a percent
+    tbl_pr.append(tbl_w)
+
+    return table
+
+
+def export_docx(title, description, row_data, scenario_names, chart_sections=None):
+    """Generate a DOCX report optimized for Google Docs pageless mode.
+
+    Layout: wide landscape, no page breaks, large images in 2-col grid,
+    full-width table.
     chart_sections: list of (section_title, [(chart_title, png_bytes), ...])
     """
     from docx import Document
-    from docx.shared import Inches, Pt, RGBColor, Cm
+    from docx.shared import Inches, Pt, RGBColor, Cm, Emu
     from docx.enum.table import WD_TABLE_ALIGNMENT
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
     doc = Document()
+    section = _set_page_landscape_wide(doc)
+
+    # Available content width
+    content_width = section.page_width - section.left_margin - section.right_margin
+    img_half_width = Inches(6.5)  # Each image in 2-col layout
 
     # Title
     heading = doc.add_heading(title, level=0)
@@ -84,74 +131,70 @@ def export_docx(title, description, row_data, scenario_names, chart_sections=Non
         _render_markdown_docx(doc, description)
         doc.add_paragraph("")
 
-    # Charts — 2-column layout per section
+    # Charts — 2-column layout per section, large images
     if chart_sections:
         for section_title, charts in chart_sections:
             doc.add_heading(section_title, level=1)
 
-            # Place charts in a 2-column borderless table
-            img_width = Inches(3.2)
             for i in range(0, len(charts), 2):
-                grid_table = doc.add_table(rows=1, cols=2)
-                grid_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-
-                # Remove borders by setting style to invisible
-                from docx.oxml.ns import qn
-                from docx.oxml import OxmlElement
-                tbl_pr = grid_table._tbl.tblPr
-                borders_elem = OxmlElement("w:tblBorders")
-                for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
-                    edge_elem = OxmlElement(f"w:{edge}")
-                    edge_elem.set(qn("w:val"), "none")
-                    edge_elem.set(qn("w:sz"), "0")
-                    borders_elem.append(edge_elem)
-                tbl_pr.append(borders_elem)
+                grid = _make_borderless_table(doc, 1, 2)
 
                 # Left image
                 _, png_left = charts[i]
-                cell_left = grid_table.rows[0].cells[0]
+                cell_left = grid.rows[0].cells[0]
                 p_left = cell_left.paragraphs[0]
                 p_left.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 run_left = p_left.add_run()
-                run_left.add_picture(io.BytesIO(png_left), width=img_width)
+                run_left.add_picture(io.BytesIO(png_left), width=img_half_width)
 
                 # Right image (if exists)
                 if i + 1 < len(charts):
                     _, png_right = charts[i + 1]
-                    cell_right = grid_table.rows[0].cells[1]
+                    cell_right = grid.rows[0].cells[1]
                     p_right = cell_right.paragraphs[0]
                     p_right.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     run_right = p_right.add_run()
-                    run_right.add_picture(io.BytesIO(png_right), width=img_width)
+                    run_right.add_picture(io.BytesIO(png_right), width=img_half_width)
 
-                doc.add_paragraph("")  # spacing between rows
+                # Small spacing paragraph
+                sp = doc.add_paragraph()
+                sp.paragraph_format.space_before = Pt(2)
+                sp.paragraph_format.space_after = Pt(2)
 
-    # Overview Table
-    doc.add_page_break()
+    # Overview Table — no page break, just a heading
     doc.add_heading("Metrics Overview", level=1)
 
     col_names = ["Metric"] + scenario_names
     table = doc.add_table(rows=1, cols=len(col_names))
     table.style = "Light Grid Accent 1"
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = True
+
+    # Set table to full width
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    tbl_w = OxmlElement("w:tblW")
+    tbl_w.set(qn("w:type"), "pct")
+    tbl_w.set(qn("w:w"), "5000")
+    table._tbl.tblPr.append(tbl_w)
 
     for i, col in enumerate(col_names):
         cell = table.rows[0].cells[i]
         cell.text = col
         for run in cell.paragraphs[0].runs:
             run.bold = True
-            run.font.size = Pt(8)
+            run.font.size = Pt(9)
 
     for row in row_data:
         cells = table.add_row().cells
         cells[0].text = row.get("metric_pretty", "")
         if cells[0].paragraphs[0].runs:
-            cells[0].paragraphs[0].runs[0].font.size = Pt(8)
+            cells[0].paragraphs[0].runs[0].font.size = Pt(9)
         for i, sname in enumerate(scenario_names, 1):
             val = row.get(sname, "")
             cells[i].text = str(val) if val is not None else ""
             if cells[i].paragraphs[0].runs:
-                cells[i].paragraphs[0].runs[0].font.size = Pt(8)
+                cells[i].paragraphs[0].runs[0].font.size = Pt(9)
 
     buf = io.BytesIO()
     doc.save(buf)
