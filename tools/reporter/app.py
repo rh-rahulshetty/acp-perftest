@@ -22,7 +22,9 @@ from data_loader import (
     get_all_available_metrics,
     get_all_benchmark_metric_keys,
     get_metric_categories,
+    format_bytes,
     get_metric_full_name,
+    is_bytes_metric,
     get_scenarios_data,
     load_csv_metric_per_trial,
     load_state,
@@ -287,11 +289,15 @@ def _make_avg_bar(title, metric_key, scenario_names, scenario_stats, y_label="Va
     """Simple bar chart showing mean value per scenario."""
     fig = go.Figure()
     values = [scenario_stats.get(sn, {}).get(metric_key, {}).get("mean", 0) for sn in scenario_names]
+    bytes_mode = is_bytes_metric(metric_key) and any(abs(v) >= 1024 for v in values)
+    text_labels = [format_bytes(v) for v in values] if bytes_mode else [f"{v:.4f}" for v in values]
     fig.add_trace(go.Bar(
         x=scenario_names, y=values,
         marker_color=SCENARIO_COLORS[:len(scenario_names)],
-        text=[f"{v:.4f}" for v in values],
+        text=text_labels,
         textposition="outside",
+        hovertemplate=("%{x}<br>" + ("%{customdata}" if bytes_mode else "%{y:.4f}") + "<extra></extra>"),
+        customdata=text_labels if bytes_mode else None,
     ))
     subtitle = _metric_subtitle(metric_key)
     fig.update_layout(
@@ -311,6 +317,8 @@ def _make_ts_line(title, csv_metric, scenario_names, scenarios_data, y_label="Va
     trial, just the scenario name is shown.
     """
     fig = go.Figure()
+    bytes_mode = is_bytes_metric(csv_metric)
+    any_large = False
     color_idx = 0
     for sname in scenario_names:
         if sname not in scenarios_data:
@@ -322,13 +330,19 @@ def _make_ts_line(title, csv_metric, scenario_names, scenarios_data, y_label="Va
             df = load_csv_metric_per_trial(trial["path"], csv_metric)
             if df.empty:
                 continue
+            if bytes_mode and df["value"].abs().max() >= 1024:
+                any_large = True
             label = f"{sname} / {trial['label']}" if multi_trial else sname
+            hover_text = [format_bytes(v) for v in df["value"]] if bytes_mode else None
             fig.add_trace(go.Scatter(
                 x=df["elapsed_seconds"], y=df["value"], mode="lines", name=label,
                 line=dict(color=color, dash=["solid", "dash", "dot", "dashdot"][j % 4]),
                 legendgroup=sname,
+                customdata=hover_text,
+                hovertemplate=("%{fullData.name}<br>%{x}s: %{customdata}<extra></extra>") if bytes_mode else None,
             ))
         color_idx += 1
+    bytes_mode = bytes_mode and any_large
     subtitle = _metric_subtitle(csv_metric)
     layout = dict(**_CHART_LAYOUT)
     if subtitle:
@@ -340,19 +354,34 @@ def _make_ts_line(title, csv_metric, scenario_names, scenarios_data, y_label="Va
     return dcc.Graph(figure=fig)
 
 
+def _format_table_value(val, bytes_mode):
+    """Format a value for table display."""
+    if val is None:
+        return ""
+    if bytes_mode and abs(val) >= 1024:
+        return format_bytes(val)
+    return f"{val:.6f}"
+
+
 def _make_comparison_table(metric_keys, scenario_names, scenario_stats, table_id):
     """AG Grid table: metrics as rows, one mean column per scenario.
 
     Hovering on any cell in a row shows the full dotted metric name as a tooltip.
+    Byte-valued metrics are shown in human-readable format.
     """
     row_data = []
     for key in metric_keys:
         pretty = prettify_metric_name(key.replace(".", "_"))
         full_name = get_metric_full_name(key)
+        vals = {}
+        for sname in scenario_names:
+            vals[sname] = scenario_stats.get(sname, {}).get(key, {}).get("mean", None)
+        bytes_mode = is_bytes_metric(key) and any(
+            v is not None and abs(v) >= 1024 for v in vals.values()
+        )
         row = {"metric": pretty, "metric_key": full_name}
         for sname in scenario_names:
-            val = scenario_stats.get(sname, {}).get(key, {}).get("mean", None)
-            row[sname] = round(val, 6) if val is not None else None
+            row[sname] = _format_table_value(vals[sname], bytes_mode)
         row_data.append(row)
 
     col_defs = [
@@ -361,10 +390,9 @@ def _make_comparison_table(metric_keys, scenario_names, scenario_stats, table_id
          "tooltipField": "metric_key"},
         {"field": "metric_key", "hide": True},
     ] + [
-        {"field": sname, "headerName": sname, "width": 150, "filter": "agNumberColumnFilter",
-         "sortable": True,
-         "tooltipField": "metric_key",
-         "valueFormatter": {"function": "params.value != null ? d3.format('.6f')(params.value) : ''"}}
+        {"field": sname, "headerName": sname, "width": 150,
+         "filter": True, "sortable": True,
+         "tooltipField": "metric_key"}
         for sname in scenario_names
     ]
 
@@ -404,13 +432,18 @@ def build_overview_dashboard(state):
     row_data = []
     for key in all_keys:
         full_name = get_metric_full_name(key)
+        vals = {}
+        for sname in scenario_names:
+            vals[sname] = scenario_stats.get(sname, {}).get(key, {}).get("mean", None)
+        bytes_mode = is_bytes_metric(key) and any(
+            v is not None and abs(v) >= 1024 for v in vals.values()
+        )
         row = {
             "metric_pretty": prettify_metric_name(key.replace(".", "_")),
             "metric_key": full_name,
         }
         for sname in scenario_names:
-            val = scenario_stats.get(sname, {}).get(key, {}).get("mean", None)
-            row[sname] = round(val, 6) if val is not None else None
+            row[sname] = _format_table_value(vals[sname], bytes_mode)
         row_data.append(row)
 
     col_defs = [
@@ -419,12 +452,20 @@ def build_overview_dashboard(state):
          "tooltipField": "metric_key"},
         {"field": "metric_key", "hide": True},
     ] + [
-        {"field": sname, "headerName": sname, "width": 150, "filter": "agNumberColumnFilter",
-         "sortable": True,
-         "tooltipField": "metric_key",
-         "valueFormatter": {"function": "params.value != null ? d3.format('.6f')(params.value) : ''"}}
+        {"field": sname, "headerName": sname, "width": 150,
+         "filter": True, "sortable": True,
+         "tooltipField": "metric_key"}
         for sname in scenario_names
     ]
+
+    search_input = dbc.Input(
+        id="overview-search",
+        placeholder="Search metrics...",
+        type="text",
+        debounce=True,
+        className="mb-3",
+        style={"maxWidth": "400px"},
+    )
 
     overview_table = dag.AgGrid(
         id="overview-table",
@@ -445,6 +486,7 @@ def build_overview_dashboard(state):
         [
             html.H4("Overview - All Metrics Comparison", className="mb-3"),
             html.P("Mean values across scenarios (averaged across trials per scenario)."),
+            search_input,
             overview_table,
         ]
     )
@@ -614,8 +656,16 @@ def build_cluster_dashboard(state):
             scenario_names, scenarios_data, "Duration (s)"), md=6),
     ]))
 
-    # --- Pod counts ---
+    # --- Pod & Node counts ---
     sections.append(html.H5("Pod & Node Counts", className="mt-4 mb-2"))
+    sections.append(dbc.Row([
+        dbc.Col(_make_avg_bar(
+            "Avg Worker Node Count", "cluster.worker_node_count",
+            scenario_names, scenario_stats, "Count"), md=6),
+        dbc.Col(_make_avg_bar(
+            "Avg Pod Count", "cluster.pod_count",
+            scenario_names, scenario_stats, "Count"), md=6),
+    ]))
     sections.append(dbc.Row([
         dbc.Col(_make_ts_line(
             "Cluster Pod Count", "measurements_cluster_pod_count",
@@ -1266,6 +1316,21 @@ def render_tab(active_tab, state):
     elif active_tab == "tab-custom":
         return build_custom_dashboard_tab(state)
     return html.P("Select a tab.")
+
+
+@app.callback(
+    Output("overview-table", "dashGridOptions"),
+    Input("overview-search", "value"),
+    prevent_initial_call=True,
+)
+def filter_overview_table(search_value):
+    return {
+        "domLayout": "autoHeight",
+        "pagination": True,
+        "paginationPageSize": 25,
+        "tooltipShowDelay": 300,
+        "quickFilterText": search_value or "",
+    }
 
 
 @app.callback(

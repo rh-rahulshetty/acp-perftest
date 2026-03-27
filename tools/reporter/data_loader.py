@@ -524,6 +524,54 @@ def get_all_benchmark_metric_keys(state):
     return sorted(all_keys)
 
 
+# Metric keys (benchmark-style, without measurements./results. prefix) that
+# represent byte values.  Used to decide whether to apply human-readable
+# formatting.  The check also verifies the actual value is large enough to
+# look like bytes (> 1024) to avoid false positives.
+BYTES_METRIC_KEYWORDS = [
+    "memory",
+    "memory_total",
+    "memory_rss_total",
+    "network_bytes_total",
+    "network_throughput",
+    "disk_throughput_total",
+    "db_total_size_bytes",
+    "db_in_use_bytes",
+    "content_length",
+    "avg_content_length",
+]
+
+
+def is_bytes_metric(metric_key):
+    """Check if a metric key represents a byte-valued metric.
+
+    Matches against BYTES_METRIC_KEYWORDS by checking if the metric key
+    ends with or contains any of the keywords.
+    """
+    key_lower = metric_key.lower().replace(".", "_")
+    for kw in BYTES_METRIC_KEYWORDS:
+        if key_lower.endswith(kw) or f"_{kw}_" in key_lower:
+            return True
+    return False
+
+
+def format_bytes(value):
+    """Format a byte value into human-readable string (KB, MB, GB, etc.).
+
+    Only applies formatting if value looks like bytes (>= 1024).
+    Returns the original number formatted normally otherwise.
+    """
+    if value is None:
+        return ""
+    if abs(value) < 1024:
+        return f"{value:.2f} B"
+    for unit in ["KB", "MB", "GB", "TB"]:
+        value /= 1024
+        if abs(value) < 1024:
+            return f"{value:.2f} {unit}"
+    return f"{value:.2f} PB"
+
+
 STAT_OPTIONS = [
     {"label": "Mean", "value": "mean"},
     {"label": "Median", "value": "median"},

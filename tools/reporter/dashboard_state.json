@@ -1,59 +1,72 @@
 {
   "trials": [
     {
-      "id": "c276b41c-2321-4c73-b695-281385105c29",
-      "path": "/home/rashetty/Desktop/agentready/loadtests/ambient-performance/hack/session-listing/varying_session/200_session/trial1",
-      "label": "trial1",
-      "scenario": "200_session",
+      "id": "617ab77d-1c7c-4f7f-bf17-bdd549560ba4",
+      "path": "/home/rashetty/Desktop/agentready/loadtests/ambient-performance/hack/session-create/10u-5sr/5104838c-3333-4030-8a13-52abd7fef8f2",
+      "label": "5104838c-3333-4030-8a13-52abd7fef8f2",
+      "scenario": "10u-5sr",
       "metadata": {
-        "run_id": "6cda68a1",
-        "users": 50,
-        "run_time": "5m",
-        "sessions_to_create": "200"
+        "run_id": "5104838c",
+        "users": 10,
+        "run_time": "10m",
+        "sessions_to_create": ""
       }
     },
     {
-      "id": "0eb31378-0281-409e-b46d-10ee8eb81524",
-      "path": "/home/rashetty/Desktop/agentready/loadtests/ambient-performance/hack/session-listing/varying_session/20_session/trial1",
-      "label": "trial1",
-      "scenario": "20_session",
+      "id": "ad5a489d-8199-4258-a976-534bc1898fbc",
+      "path": "/home/rashetty/Desktop/agentready/loadtests/ambient-performance/hack/session-create/200u-20sr/b9086320-c9c3-42e9-a251-32c8b962a89c",
+      "label": "b9086320-c9c3-42e9-a251-32c8b962a89c",
+      "scenario": "200u-20sr",
       "metadata": {
-        "run_id": "0399d41b",
-        "users": 50,
-        "run_time": "5m",
-        "sessions_to_create": "20"
+        "run_id": "b9086320",
+        "users": 200,
+        "run_time": "10m",
+        "sessions_to_create": ""
       }
     },
     {
-      "id": "da394191-d010-4e4a-8022-e7f8a7d68b7a",
-      "path": "/home/rashetty/Desktop/agentready/loadtests/ambient-performance/hack/session-listing/varying_session/500_session/trial1",
+      "id": "cd8e6bb4-2f37-4419-ad28-e5146b059d9c",
+      "path": "/home/rashetty/Desktop/agentready/loadtests/ambient-performance/hack/session-create/300u-50sr/trial1",
       "label": "trial1",
-      "scenario": "500_session",
+      "scenario": "300u-50sr",
       "metadata": {
-        "run_id": "498678ac",
-        "users": 50,
-        "run_time": "5m",
-        "sessions_to_create": "500"
+        "run_id": "2082f185",
+        "users": 300,
+        "run_time": "10m",
+        "sessions_to_create": ""
       }
     },
     {
-      "id": "23817f73-48fb-421d-b41f-b6ff93bb565f",
-      "path": "/home/rashetty/Desktop/agentready/loadtests/ambient-performance/hack/session-listing/varying_session/50_session/trial1",
-      "label": "trial1",
-      "scenario": "50_session",
+      "id": "0de05481-c378-4506-b275-83aed9c4337f",
+      "path": "/home/rashetty/Desktop/agentready/loadtests/ambient-performance/hack/session-create/500u-100sr/14695338-1b35-4f0b-a757-9932911af03a",
+      "label": "14695338-1b35-4f0b-a757-9932911af03a",
+      "scenario": "500u-100sr",
       "metadata": {
-        "run_id": "c78800f8",
+        "run_id": "14695338",
+        "users": 500,
+        "run_time": "10m",
+        "sessions_to_create": ""
+      }
+    },
+    {
+      "id": "3bc8621e-c08b-4e1a-afd9-40e1a13ae3ea",
+      "path": "/home/rashetty/Desktop/agentready/loadtests/ambient-performance/hack/session-create/50u-10sr/a8180d0b-64d9-4819-8f70-8d2f80889121",
+      "label": "a8180d0b-64d9-4819-8f70-8d2f80889121",
+      "scenario": "50u-10sr",
+      "metadata": {
+        "run_id": "a8180d0b",
         "users": 50,
-        "run_time": "5m",
-        "sessions_to_create": "50"
+        "run_time": "10m",
+        "sessions_to_create": ""
       }
     }
   ],
   "custom_dashboards": [],
   "scenario_order": [
-    "20_session",
-    "50_session",
-    "200_session",
-    "500_session"
+    "10u-5sr",
+    "50u-10sr",
+    "200u-20sr",
+    "300u-50sr",
+    "500u-100sr"
   ]
 }
