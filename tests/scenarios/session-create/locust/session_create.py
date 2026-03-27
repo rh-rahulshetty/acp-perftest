@@ -1,15 +1,16 @@
 """session-create — Load test for concurrent session creation.
 
-Simulates multiple users creating sessions simultaneously to evaluate
-backend throughput and stability under concurrent creation load.
+Each virtual user creates exactly one session, then idles until the test
+ends. TEST_USERS controls the total number of sessions created and
+TEST_SPAWN_RATE controls how many concurrent creation requests hit the
+API per second.
 
-A global setup ensures the target project exists. Each virtual user
-then continuously creates sessions as the main load task. Created
-sessions are tracked and cleaned up on test stop.
+Examples:
+  Burst:  TEST_USERS=50 TEST_SPAWN_RATE=50  — all 50 sessions at once
+  Ramp:   TEST_USERS=50 TEST_SPAWN_RATE=5   — 5 new sessions/second
 
-Note: The backend generates session names as session-<unix_seconds>,
-so concurrent requests within the same second will collide (409/500).
-This is expected and part of what this test measures.
+A global setup ensures the target project exists. Teardown (via
+teardown.sh) deletes all sessions after the test.
 
 Environment variables (set via locusttest.yaml env or shell):
   PROJECT_NAME           Target project name (default: session-create)
@@ -78,27 +79,30 @@ def on_test_start(environment, **kwargs):
 
 
 class SessionCreateUser(HttpUser):
-    wait_time = between(1, 3)
+    # wait_time helps avoid repeated idle task calls
+    wait_time = between(30, 60)
 
     def on_start(self):
-        self.headers = _build_headers()
-        self.base = f"/api/projects/{PROJECT_NAME}/agentic-sessions"
-
-    @task
-    def create_session(self):
-        """Create a session — the primary load target."""
+        """Create exactly one session per user. Runs once when the user spawns."""
+        headers = _build_headers()
+        base = f"/api/projects/{PROJECT_NAME}/agentic-sessions"
         payload = {
             "displayName": "lt-create-test",
             "labels": {"loadtest": "true"},
         }
         with self.client.post(
-            self.base,
+            base,
             json=payload,
-            headers=self.headers,
-            name="POST /agentic-sessions",
+            headers=headers,
+            name="POST /agentic-sessions (create)",
             catch_response=True,
         ) as resp:
             if resp.status_code in (200, 201):
                 resp.success()
             else:
                 resp.failure(f"Create failed: {resp.status_code} {resp.text[:200]}")
+
+    @task
+    def idle(self):
+        """No-op — keep the user alive after session creation."""
+        pass
