@@ -69,3 +69,8 @@
 - name: measurements.ambient.project.image_pull_duration_p99
   monitoring_query: histogram_quantile(0.99, sum(rate(ambient_image_pull_duration_seconds_bucket{exported_namespace='session-create'}[5m])) by (le))
   monitoring_step: 15
+
+# --- Pod count in the project namespace ---
+- name: measurements.ambient.project.pod_count
+  monitoring_query: count(kube_pod_info{namespace='session-create'})
+  monitoring_step: 15

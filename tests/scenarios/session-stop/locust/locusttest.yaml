@@ -1,0 +1,31 @@
+# LocustTest CR template for session-stop scenario.
+# Variables are substituted by ci-scripts/load-test.sh via envsubst.
+apiVersion: locust.io/v2
+kind: LocustTest
+metadata:
+  name: ${LOCUST_TEST_NAME}
+  namespace: ${LOCUST_NAMESPACE}
+spec:
+  image: mirror.gcr.io/locustio/locust:2.43.3
+  testFiles:
+    configMapRef: ${CONFIGMAP_NAME}
+  env:
+    variables:
+      - name: AUTH_TOKEN
+        value: "${AUTH_TOKEN}"
+      - name: PROJECT_NAME
+        value: "${PROJECT_NAME}"
+      - name: LOADTEST_SA_IDENTITY
+        value: "${LOADTEST_SA_IDENTITY}"
+      - name: SESSION_READY_WAIT
+        value: "${SESSION_READY_WAIT}"
+  master:
+    command: >-
+      --locustfile /lotest/src/session_stop.py
+      --host ${LOCUST_HOST}
+      --users ${TEST_USERS}
+      --spawn-rate ${TEST_SPAWN_RATE}
+      --run-time ${TEST_RUN_TIME}
+  worker:
+    command: "--locustfile /lotest/src/session_stop.py"
+    replicas: ${TEST_WORKERS}
