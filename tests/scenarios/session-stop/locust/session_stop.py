@@ -1,8 +1,8 @@
 """session-stop — Load test for concurrent session stop operations.
 
-Each virtual user creates a session during on_start (not measured), then
-calls the stop endpoint exactly once as its primary task.  After stopping,
-the user idles for the remainder of the test.
+Each virtual user creates a session (unmeasured), waits for the runner pod
+to start (SESSION_READY_WAIT), then calls the stop endpoint (measured) —
+all inside on_start.  After stopping the user idles until the test ends.
 
 TEST_USERS controls how many sessions are created and stopped.
 TEST_SPAWN_RATE controls how many stop requests hit the API per second.
@@ -25,8 +25,8 @@ Environment variables (set via locusttest.yaml env or shell):
   RUNNER_API_KEY         Runner API key for session validation
                          (default: mock-replay-key)
   SESSION_READY_WAIT     Seconds to wait after creating a session before
-                         allowing the stop task to fire, giving the runner
-                         pod time to start (default: 60)
+                         stopping it, giving the runner pod time to start
+                         (default: 20)
 """
 
 import os
@@ -34,7 +34,7 @@ import logging
 import time
 
 import requests as req_lib
-from locust import HttpUser, task, constant, events
+from locust import HttpUser, task, between, events
 from locust.runners import WorkerRunner
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ LOADTEST_SA_IDENTITY = os.environ.get(
     "system:serviceaccount:ambient-code:loadtest-sa",
 )
 RUNNER_API_KEY = os.environ.get("RUNNER_API_KEY", "mock-replay-key")
-SESSION_READY_WAIT = int(os.environ.get("SESSION_READY_WAIT", "20"))
+SESSION_READY_WAIT = int(os.environ.get("SESSION_READY_WAIT", "120"))
 
 
 def _build_headers():
@@ -89,14 +89,13 @@ def on_test_start(environment, **kwargs):
 
 
 class SessionStopUser(HttpUser):
-    wait_time = constant(0)
+    wait_time = between(30, 60)
 
     def on_start(self):
-        """Create a session (unmeasured) so there is something to stop."""
-        self.headers = _build_headers()
-        self.base = f"/api/projects/{PROJECT_NAME}/agentic-sessions"
-        self._session_name = None
-        self._stopped = False
+        """Create a session, wait for pod readiness, then stop it (measured)."""
+        headers = _build_headers()
+        base = f"/api/projects/{PROJECT_NAME}/agentic-sessions"
+        session_name = None
 
         payload = {
             "displayName": "lt-stop-test",
@@ -105,13 +104,13 @@ class SessionStopUser(HttpUser):
 
         for attempt in range(3):
             resp = req_lib.post(
-                f"{self.host}{self.base}",
+                f"{self.host}{base}",
                 json=payload,
-                headers=self.headers,
+                headers=headers,
             )
             if resp.status_code in (200, 201):
-                self._session_name = resp.json().get("name")
-                logger.info("Created session %s — waiting %ds for pod readiness", self._session_name, SESSION_READY_WAIT)
+                session_name = resp.json().get("name")
+                logger.info("Created session %s — waiting %ds for pod readiness", session_name, SESSION_READY_WAIT)
                 break
             elif resp.status_code == 500 and attempt < 2:
                 time.sleep(1.1)
@@ -121,25 +120,25 @@ class SessionStopUser(HttpUser):
                     resp.status_code, resp.text[:200],
                 )
 
-        if self._session_name and SESSION_READY_WAIT > 0:
-            time.sleep(SESSION_READY_WAIT)
-
-    @task
-    def stop_session(self):
-        """Stop the session exactly once, then idle."""
-        if self._stopped or self._session_name is None:
+        if session_name is None:
             return
 
+        if SESSION_READY_WAIT > 0:
+            time.sleep(SESSION_READY_WAIT)
+
         with self.client.post(
-            f"{self.base}/{self._session_name}/stop",
-            headers=self.headers,
+            f"{base}/{session_name}/stop",
+            headers=headers,
             name="POST /agentic-sessions/{id}/stop",
             catch_response=True,
         ) as resp:
             if resp.status_code in (200, 201, 202, 204):
                 resp.success()
-                logger.info("Stopped session %s", self._session_name)
+                logger.info("Stopped session %s", session_name)
             else:
                 resp.failure(f"Stop failed: {resp.status_code} {resp.text[:200]}")
 
-        self._stopped = True
+    @task
+    def idle(self):
+        """No-op — keep the user alive after session stop."""
+        pass

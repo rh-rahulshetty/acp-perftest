@@ -695,6 +695,17 @@ def build_cluster_dashboard(state):
             scenario_names, scenarios_data, "Count"), md=6),
     ]))
 
+    # --- Project namespace pod count ---
+    sections.append(html.H5("Project Namespace Pods", className="mt-4 mb-2"))
+    sections.append(dbc.Row([
+        dbc.Col(_make_ts_line(
+            "Project Pod Count", "measurements_ambient_project_pod_count",
+            scenario_names, scenarios_data, "Count"), md=6),
+        dbc.Col(_make_avg_bar(
+            "Avg Project Pod Count", "ambient.project.pod_count",
+            scenario_names, scenario_stats, "Count"), md=6),
+    ]))
+
     # --- Summary table ---
     cluster_keys = [k for k in sorted(scenario_stats.get(scenario_names[0], {}).keys())
                     if k.startswith(("cluster.", "apiserver.", "etcd."))]
@@ -1617,6 +1628,12 @@ def _build_export_charts(scenario_names, scenarios_data, scenario_stats):
               scenario_names, scenarios_data, "Count")
     _add_line(cluster_charts, "Worker Node Count Over Time", "measurements_cluster_worker_node_count",
               scenario_names, scenarios_data, "Count")
+
+    # Project namespace pod count
+    _add_line(cluster_charts, "Project Pod Count Over Time", "measurements_ambient_project_pod_count",
+              scenario_names, scenarios_data, "Count")
+    _add_bar(cluster_charts, "Avg Project Pod Count", "ambient.project.pod_count",
+             scenario_names, scenario_stats, "Count")
 
     if cluster_charts:
         sections.append(("Cluster Metrics", cluster_charts))

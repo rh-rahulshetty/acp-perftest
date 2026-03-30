@@ -16,7 +16,7 @@ fi
 
 # Scenario-specific defaults
 export PROJECT_NAME="${PROJECT_NAME:-session-stop}"
-export SESSION_READY_WAIT="${SESSION_READY_WAIT:-20}"
+export SESSION_READY_WAIT="${SESSION_READY_WAIT:-120}"
 
 info "  LOCUST_HOST          = $LOCUST_HOST"
 info "  PROJECT_NAME         = $PROJECT_NAME"
