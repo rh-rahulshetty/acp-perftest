@@ -252,6 +252,26 @@ def build_static_sidebar():
 
 SCENARIO_COLORS = ["#3498db", "#e74c3c", "#2ecc71", "#f39c12", "#9b59b6", "#1abc9c", "#e67e22", "#8e44ad"]
 
+DEFAULT_BAR_STAT_FIELDS = ["percentile50", "percentile90", "percentile99"]
+
+STAT_FIELD_COLORS = {
+    "mean": "#3498db",
+    "median": "#2980b9",
+    "min": "#27ae60",
+    "max": "#e74c3c",
+    "percentile25": "#16a085",
+    "percentile50": "#2ecc71",
+    "percentile75": "#f1c40f",
+    "percentile90": "#e67e22",
+    "percentile95": "#e74c3c",
+    "percentile99": "#c0392b",
+    "percentile999": "#8e44ad",
+    "stdev": "#7f8c8d",
+    "iqr": "#95a5a6",
+}
+
+STAT_FIELD_LABELS = {opt["value"]: opt["label"] for opt in STAT_OPTIONS}
+
 # Common layout settings to prevent title/legend overlap
 _CHART_LAYOUT = dict(
     height=370,
@@ -285,34 +305,75 @@ def _metric_subtitle(metric_key):
     return ""
 
 
-def _build_avg_bar_fig(title, metric_key, scenario_names, scenario_stats, y_label="Value"):
-    """Build a bar chart figure showing mean value per scenario. Returns go.Figure."""
+def _build_avg_bar_fig(title, metric_key, scenario_names, scenario_stats,
+                       y_label="Value", stat_fields=None):
+    """Build a bar chart figure for one metric across scenarios.
+
+    When *stat_fields* contains a single field the chart shows one bar per
+    scenario coloured by scenario.  When multiple fields are given it shows
+    grouped bars (one group per scenario, one bar per stat field) coloured by
+    stat field so the percentile breakdown is easy to compare.
+    """
+    if stat_fields is None:
+        stat_fields = DEFAULT_BAR_STAT_FIELDS
     fig = go.Figure()
-    values = [scenario_stats.get(sn, {}).get(metric_key, {}).get("mean", 0) for sn in scenario_names]
-    bytes_mode = is_bytes_metric(metric_key) and any(abs(v) >= 1024 for v in values)
-    text_labels = [format_bytes(v) for v in values] if bytes_mode else [f"{v:.4f}" for v in values]
-    fig.add_trace(go.Bar(
-        x=scenario_names, y=values,
-        marker_color=SCENARIO_COLORS[:len(scenario_names)],
-        text=text_labels,
-        textposition="outside",
-        hovertemplate=("%{x}<br>" + ("%{customdata}" if bytes_mode else "%{y:.4f}") + "<extra></extra>"),
-        customdata=text_labels if bytes_mode else None,
-    ))
+
+    if len(stat_fields) == 1:
+        sf = stat_fields[0]
+        values = [scenario_stats.get(sn, {}).get(metric_key, {}).get(sf, 0) for sn in scenario_names]
+        bytes_mode = is_bytes_metric(metric_key) and any(abs(v) >= 1024 for v in values)
+        text_labels = [format_bytes(v) for v in values] if bytes_mode else [f"{v:.4f}" for v in values]
+        fig.add_trace(go.Bar(
+            x=scenario_names, y=values,
+            marker_color=SCENARIO_COLORS[:len(scenario_names)],
+            text=text_labels,
+            textposition="outside",
+            hovertemplate=("%{x}<br>" + ("%{customdata}" if bytes_mode else "%{y:.4f}") + "<extra></extra>"),
+            customdata=text_labels if bytes_mode else None,
+        ))
+        show_legend = False
+    else:
+        # Grouped bars: one trace per stat field
+        all_values = []
+        for sf in stat_fields:
+            all_values.extend(
+                scenario_stats.get(sn, {}).get(metric_key, {}).get(sf, 0) for sn in scenario_names
+            )
+        bytes_mode = is_bytes_metric(metric_key) and any(abs(v) >= 1024 for v in all_values)
+        for sf in stat_fields:
+            values = [scenario_stats.get(sn, {}).get(metric_key, {}).get(sf, 0) for sn in scenario_names]
+            text_labels = [format_bytes(v) for v in values] if bytes_mode else [f"{v:.4f}" for v in values]
+            fig.add_trace(go.Bar(
+                x=scenario_names, y=values,
+                name=STAT_FIELD_LABELS.get(sf, sf),
+                marker_color=STAT_FIELD_COLORS.get(sf, "#888"),
+                text=text_labels,
+                textposition="outside",
+                hovertemplate=("%{x} — " + STAT_FIELD_LABELS.get(sf, sf)
+                               + "<br>" + ("%{customdata}" if bytes_mode else "%{y:.4f}")
+                               + "<extra></extra>"),
+                customdata=text_labels if bytes_mode else None,
+            ))
+        fig.update_layout(barmode="group")
+        show_legend = True
+
     subtitle = _metric_subtitle(metric_key)
     fig.update_layout(
         title={"text": f"{title}<br>{subtitle}" if subtitle else title, "x": 0.5},
         xaxis_title="Scenario", yaxis_title=y_label,
-        showlegend=False,
+        showlegend=show_legend,
         height=_CHART_LAYOUT["height"],
         margin=dict(l=50, r=20, t=90 if subtitle else 60, b=40),
+        legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
     )
     return fig
 
 
-def _make_avg_bar(title, metric_key, scenario_names, scenario_stats, y_label="Value"):
-    """Simple bar chart showing mean value per scenario."""
-    return dcc.Graph(figure=_build_avg_bar_fig(title, metric_key, scenario_names, scenario_stats, y_label))
+def _make_avg_bar(title, metric_key, scenario_names, scenario_stats,
+                  y_label="Value", stat_fields=None):
+    """Bar chart showing selected stat fields per scenario."""
+    return dcc.Graph(figure=_build_avg_bar_fig(
+        title, metric_key, scenario_names, scenario_stats, y_label, stat_fields))
 
 
 def _build_ts_line_fig(title, csv_metric, scenario_names, scenarios_data, y_label="Value"):
@@ -512,7 +573,7 @@ def build_overview_dashboard(state):
     )
 
 
-def build_ambient_dashboard(state):
+def build_ambient_dashboard(state, stat_fields=None):
     """Ambient platform metrics: component resource usage, sessions, latency."""
     scenarios_data = get_scenarios_data(state)
     if not scenarios_data:
@@ -522,15 +583,17 @@ def build_ambient_dashboard(state):
 
     sections = []
 
+    sf = stat_fields
+
     # --- Section 1: Namespace totals ---
     sections.append(html.H5("Namespace Resource Totals", className="mt-3 mb-2"))
     sections.append(dbc.Row([
         dbc.Col(_make_avg_bar(
             "Namespace CPU Total", "ambient.namespace.cpu_total",
-            scenario_names, scenario_stats, "CPU (cores)"), md=6),
+            scenario_names, scenario_stats, "CPU (cores)", sf), md=6),
         dbc.Col(_make_avg_bar(
             "Namespace Memory Total", "ambient.namespace.memory_total",
-            scenario_names, scenario_stats, "Memory (bytes)"), md=6),
+            scenario_names, scenario_stats, "Memory (bytes)", sf), md=6),
     ]))
 
     # --- Section 2: Per-component CPU & Memory ---
@@ -544,7 +607,7 @@ def build_ambient_dashboard(state):
     ]
 
     sections.append(html.H5("Component Resource Usage", className="mt-4 mb-2"))
-    sections.append(html.P("Mean values across test duration, per scenario.", className="text-muted"))
+    sections.append(html.P("Selected stat fields across test duration, per scenario.", className="text-muted"))
 
     component_charts = []
     for comp_key, comp_name in components:
@@ -553,20 +616,20 @@ def build_ambient_dashboard(state):
         has_data = any(cpu_key in scenario_stats.get(s, {}) for s in scenario_names)
         if has_data:
             component_charts.append(dbc.Col(
-                _make_avg_bar(f"{comp_name} CPU", cpu_key, scenario_names, scenario_stats, "CPU (cores)"), md=6))
+                _make_avg_bar(f"{comp_name} CPU", cpu_key, scenario_names, scenario_stats, "CPU (cores)", sf), md=6))
             component_charts.append(dbc.Col(
-                _make_avg_bar(f"{comp_name} Memory", mem_key, scenario_names, scenario_stats, "Memory (bytes)"), md=6))
+                _make_avg_bar(f"{comp_name} Memory", mem_key, scenario_names, scenario_stats, "Memory (bytes)", sf), md=6))
     sections.append(dbc.Row(component_charts))
 
     # --- Section 3: Session Startup & Image Pull Latency ---
     sections.append(html.H5("Session Startup Latency", className="mt-4 mb-2"))
     sections.append(dbc.Row([
         dbc.Col(_make_avg_bar(
-            "Session Startup Duration (mean)", "ambient.session_startup.duration_avg",
-            scenario_names, scenario_stats, "Duration (s)"), md=6),
+            "Session Startup Duration", "ambient.session_startup.duration_avg",
+            scenario_names, scenario_stats, "Duration (s)", sf), md=6),
         dbc.Col(_make_avg_bar(
-            "Image Pull Duration (mean)", "ambient.image_pull.duration_avg",
-            scenario_names, scenario_stats, "Duration (s)"), md=6),
+            "Image Pull Duration", "ambient.image_pull.duration_avg",
+            scenario_names, scenario_stats, "Duration (s)", sf), md=6),
     ]))
 
     # Time-series for startup latency (per-trial lines)
@@ -583,8 +646,8 @@ def build_ambient_dashboard(state):
     sections.append(html.H5("Operator Reconciliation", className="mt-4 mb-2"))
     sections.append(dbc.Row([
         dbc.Col(_make_avg_bar(
-            "Reconcile Duration (mean)", "ambient.reconcile.duration_avg",
-            scenario_names, scenario_stats, "Duration (s)"), md=6),
+            "Reconcile Duration", "ambient.reconcile.duration_avg",
+            scenario_names, scenario_stats, "Duration (s)", sf), md=6),
         dbc.Col(_make_ts_line(
             "Reconcile Rate (over time)", "measurements_ambient_reconcile_rate",
             scenario_names, scenarios_data, "ops/s"), md=6),
@@ -617,13 +680,14 @@ def build_ambient_dashboard(state):
     return html.Div(sections)
 
 
-def build_cluster_dashboard(state):
+def build_cluster_dashboard(state, stat_fields=None):
     """Cluster-level metrics: CPU, memory, network, API server, etcd."""
     scenarios_data = get_scenarios_data(state)
     if not scenarios_data:
         return _no_data_alert()
 
     scenario_names, scenarios_data, scenario_stats = _get_scenario_stats(state)
+    sf = stat_fields
 
     sections = [html.H4("Cluster Metrics", className="mb-3")]
 
@@ -632,18 +696,18 @@ def build_cluster_dashboard(state):
     sections.append(dbc.Row([
         dbc.Col(_make_avg_bar(
             "Cluster CPU Usage Rate", "cluster.cpu_usage_rate",
-            scenario_names, scenario_stats, "CPU (cores)"), md=6),
+            scenario_names, scenario_stats, "CPU (cores)", sf), md=6),
         dbc.Col(_make_avg_bar(
             "Cluster Memory RSS", "cluster.memory_rss_total",
-            scenario_names, scenario_stats, "Memory (bytes)"), md=6),
+            scenario_names, scenario_stats, "Memory (bytes)", sf), md=6),
     ]))
     sections.append(dbc.Row([
         dbc.Col(_make_avg_bar(
             "Network Throughput", "cluster.network_bytes_total",
-            scenario_names, scenario_stats, "Bytes"), md=6),
+            scenario_names, scenario_stats, "Bytes", sf), md=6),
         dbc.Col(_make_avg_bar(
             "Disk Throughput", "cluster.disk_throughput_total",
-            scenario_names, scenario_stats, "Bytes"), md=6),
+            scenario_names, scenario_stats, "Bytes", sf), md=6),
     ]))
 
     # --- Time-series (per-trial lines) ---
@@ -680,11 +744,11 @@ def build_cluster_dashboard(state):
     sections.append(html.H5("Pod & Node Counts", className="mt-4 mb-2"))
     sections.append(dbc.Row([
         dbc.Col(_make_avg_bar(
-            "Avg Worker Node Count", "cluster.worker_node_count",
-            scenario_names, scenario_stats, "Count"), md=6),
+            "Worker Node Count", "cluster.worker_node_count",
+            scenario_names, scenario_stats, "Count", sf), md=6),
         dbc.Col(_make_avg_bar(
-            "Avg Pod Count", "cluster.pod_count",
-            scenario_names, scenario_stats, "Count"), md=6),
+            "Pod Count", "cluster.pod_count",
+            scenario_names, scenario_stats, "Count", sf), md=6),
     ]))
     sections.append(dbc.Row([
         dbc.Col(_make_ts_line(
@@ -702,8 +766,8 @@ def build_cluster_dashboard(state):
             "Project Pod Count", "measurements_ambient_project_pod_count",
             scenario_names, scenarios_data, "Count"), md=6),
         dbc.Col(_make_avg_bar(
-            "Avg Project Pod Count", "ambient.project.pod_count",
-            scenario_names, scenario_stats, "Count"), md=6),
+            "Project Pod Count", "ambient.project.pod_count",
+            scenario_names, scenario_stats, "Count", sf), md=6),
     ]))
 
     # --- Summary table ---
@@ -717,13 +781,14 @@ def build_cluster_dashboard(state):
     return html.Div(sections)
 
 
-def build_locust_dashboard(state):
+def build_locust_dashboard(state, stat_fields=None):
     """Locust load test results: response times, throughput, errors, resource usage."""
     scenarios_data = get_scenarios_data(state)
     if not scenarios_data:
         return _no_data_alert()
 
     scenario_names, scenarios_data, scenario_stats = _get_scenario_stats(state)
+    sf = stat_fields
 
     sections = [html.H4("Locust Load Test Results", className="mb-3")]
 
@@ -778,10 +843,10 @@ def build_locust_dashboard(state):
     sections.append(dbc.Row([
         dbc.Col(_make_avg_bar(
             "Workers CPU", "locust.workers.cpu",
-            scenario_names, scenario_stats, "CPU (cores)"), md=6),
+            scenario_names, scenario_stats, "CPU (cores)", sf), md=6),
         dbc.Col(_make_avg_bar(
             "Workers Memory", "locust.workers.memory",
-            scenario_names, scenario_stats, "Memory (bytes)"), md=6),
+            scenario_names, scenario_stats, "Memory (bytes)", sf), md=6),
     ]))
 
     # --- Users ramp-up ---
@@ -1119,6 +1184,20 @@ app.layout = dbc.Container(
                             id="main-tabs",
                             active_tab="tab-overview",
                         ),
+                        html.Div(
+                            [
+                                html.Label("Bar chart stat fields:", className="me-2 fw-bold"),
+                                dcc.Dropdown(
+                                    id="bar-stat-fields",
+                                    options=STAT_OPTIONS,
+                                    value=DEFAULT_BAR_STAT_FIELDS,
+                                    multi=True,
+                                    placeholder="Select stat fields for bar charts…",
+                                    style={"minWidth": "350px"},
+                                ),
+                            ],
+                            className="d-flex align-items-center mt-2 mb-2",
+                        ),
                         html.Div(id="tab-content", className="mt-3 pb-5"),
                     ],
                     md=9,
@@ -1388,16 +1467,18 @@ def clear_trials(n_clicks, state):
     Output("tab-content", "children"),
     Input("main-tabs", "active_tab"),
     Input("store-state", "data"),
+    Input("bar-stat-fields", "value"),
 )
-def render_tab(active_tab, state):
+def render_tab(active_tab, state, bar_stat_fields):
+    stat_fields = bar_stat_fields or DEFAULT_BAR_STAT_FIELDS
     if active_tab == "tab-overview":
         return build_overview_dashboard(state)
     elif active_tab == "tab-ambient":
-        return build_ambient_dashboard(state)
+        return build_ambient_dashboard(state, stat_fields)
     elif active_tab == "tab-cluster":
-        return build_cluster_dashboard(state)
+        return build_cluster_dashboard(state, stat_fields)
     elif active_tab == "tab-locust":
-        return build_locust_dashboard(state)
+        return build_locust_dashboard(state, stat_fields)
     elif active_tab == "tab-custom":
         return build_custom_dashboard_tab(state)
     return html.P("Select a tab.")

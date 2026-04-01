@@ -32,7 +32,22 @@ def build_benchmark(artifacts_dir: str) -> dict:
         with open(monitoring_data_path) as f:
             benchmark["monitoring"] = json.load(f)
 
+    # Fallback: if percentile50 is missing (e.g. data collected without the
+    # status_data_wrapper.py monkey-patch), derive it from median.  Not
+    # identical to the interpolated percentile, but close enough as a safety net.
+    _inject_percentile50(benchmark.get("monitoring", {}))
+
     return benchmark
+
+
+def _inject_percentile50(monitoring: dict) -> None:
+    """Walk monitoring dict and copy 'median' to 'percentile50' where missing."""
+    for value in monitoring.values():
+        if isinstance(value, dict):
+            if "median" in value and "percentile50" not in value:
+                value["percentile50"] = value["median"]
+            else:
+                _inject_percentile50(value)
 
 
 def main():

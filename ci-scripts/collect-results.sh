@@ -136,7 +136,7 @@ if is_truthy "$MONITORING_COLLECTION_ENABLED"; then
                 # Always run the default config
                 if [[ -f "$DEFAULT_CONFIG" ]]; then
                     info "Collecting default metrics ($DEFAULT_CONFIG) …"
-                    status_data.py \
+                    python3 "$PROJECT_ROOT/tools/status_data_wrapper.py" \
                         --status-data-file "$MONITORING_DATA_FILE" \
                         --additional "$DEFAULT_CONFIG" \
                         --monitoring-start "$MSTART" \
@@ -152,7 +152,7 @@ if is_truthy "$MONITORING_COLLECTION_ENABLED"; then
                 # Additionally run the scenario-specific config if present
                 if [[ -f "$SCENARIO_CONFIG" ]]; then
                     info "Collecting scenario metrics ($SCENARIO_CONFIG) …"
-                    status_data.py \
+                    python3 "$PROJECT_ROOT/tools/status_data_wrapper.py" \
                         --status-data-file "$MONITORING_DATA_FILE" \
                         --additional "$SCENARIO_CONFIG" \
                         --monitoring-start "$MSTART" \

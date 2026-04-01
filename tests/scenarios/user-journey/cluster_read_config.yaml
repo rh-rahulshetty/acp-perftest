@@ -117,11 +117,17 @@
     sum(rate(ambient_session_startup_duration_seconds_sum{exported_namespace='user-journey'}[5m]))
     / sum(rate(ambient_session_startup_duration_seconds_count{exported_namespace='user-journey'}[5m]))
   monitoring_step: 15
+- name: measurements.ambient.project.session_startup_duration_p50
+  monitoring_query: histogram_quantile(0.5, sum(rate(ambient_session_startup_duration_seconds_bucket{exported_namespace='user-journey'}[5m])) by (le))
+  monitoring_step: 15
 - name: measurements.ambient.project.session_startup_duration_p99
   monitoring_query: histogram_quantile(0.99, sum(rate(ambient_session_startup_duration_seconds_bucket{exported_namespace='user-journey'}[5m])) by (le))
   monitoring_step: 15
 - name: measurements.ambient.project.phase_transitions
   monitoring_query: sum by (from_phase, to_phase) (rate(ambient_session_phase_transitions_total{exported_namespace='user-journey'}[5m]))
+  monitoring_step: 15
+- name: measurements.ambient.project.image_pull_duration_p50
+  monitoring_query: histogram_quantile(0.5, sum(rate(ambient_image_pull_duration_seconds_bucket{exported_namespace='user-journey'}[5m])) by (le))
   monitoring_step: 15
 - name: measurements.ambient.project.image_pull_duration_p99
   monitoring_query: histogram_quantile(0.99, sum(rate(ambient_image_pull_duration_seconds_bucket{exported_namespace='user-journey'}[5m])) by (le))

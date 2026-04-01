@@ -231,6 +231,10 @@
   monitoring_query: histogram_quantile(0.95, sum(rate(ambient_reconcile_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
   monitoring_step: 15
 
+- name: measurements.ambient.reconcile.duration_p50
+  monitoring_query: histogram_quantile(0.5, sum(rate(ambient_reconcile_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
+  monitoring_step: 15
+
 - name: measurements.ambient.reconcile.rate
   monitoring_query: sum(rate(ambient_reconcile_duration_seconds_count{namespace='ambient-code'}[5m]))
   monitoring_step: 15
@@ -263,6 +267,10 @@
     / sum(rate(ambient_session_startup_duration_seconds_count{namespace='ambient-code'}[5m]))
   monitoring_step: 15
 
+- name: measurements.ambient.session_startup.duration_p50
+  monitoring_query: histogram_quantile(0.5, sum(rate(ambient_session_startup_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
+  monitoring_step: 15
+
 - name: measurements.ambient.session_startup.duration_p95
   monitoring_query: histogram_quantile(0.95, sum(rate(ambient_session_startup_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
   monitoring_step: 15
@@ -275,6 +283,10 @@
   monitoring_query: >-
     sum(rate(ambient_session_total_duration_seconds_sum{namespace='ambient-code'}[5m]))
     / sum(rate(ambient_session_total_duration_seconds_count{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+- name: measurements.ambient.session_total.duration_p50
+  monitoring_query: histogram_quantile(0.5, sum(rate(ambient_session_total_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
   monitoring_step: 15
 
 - name: measurements.ambient.session_total.duration_p95
@@ -309,6 +321,10 @@
     / sum(rate(ambient_token_provision_duration_seconds_count{namespace='ambient-code'}[5m]))
   monitoring_step: 15
 
+- name: measurements.ambient.token_provision.duration_p50
+  monitoring_query: histogram_quantile(0.5, sum(rate(ambient_token_provision_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
+  monitoring_step: 15
+
 - name: measurements.ambient.token_provision.duration_p99
   monitoring_query: histogram_quantile(0.99, sum(rate(ambient_token_provision_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
   monitoring_step: 15
@@ -317,6 +333,10 @@
   monitoring_query: >-
     sum(rate(ambient_image_pull_duration_seconds_sum{namespace='ambient-code'}[5m]))
     / sum(rate(ambient_image_pull_duration_seconds_count{namespace='ambient-code'}[5m]))
+  monitoring_step: 15
+
+- name: measurements.ambient.image_pull.duration_p50
+  monitoring_query: histogram_quantile(0.5, sum(rate(ambient_image_pull_duration_seconds_bucket{namespace='ambient-code'}[5m])) by (le))
   monitoring_step: 15
 
 - name: measurements.ambient.image_pull.duration_p99

@@ -46,6 +46,9 @@
     sum(rate(ambient_session_startup_duration_seconds_sum{exported_namespace='session-listing'}[5m]))
     / sum(rate(ambient_session_startup_duration_seconds_count{exported_namespace='session-listing'}[5m]))
   monitoring_step: 15
+- name: measurements.ambient.project.session_startup_duration_p50
+  monitoring_query: histogram_quantile(0.5, sum(rate(ambient_session_startup_duration_seconds_bucket{exported_namespace='session-listing'}[5m])) by (le))
+  monitoring_step: 15
 - name: measurements.ambient.project.session_startup_duration_p99
   monitoring_query: histogram_quantile(0.99, sum(rate(ambient_session_startup_duration_seconds_bucket{exported_namespace='session-listing'}[5m])) by (le))
   monitoring_step: 15
@@ -61,8 +64,14 @@
 - name: measurements.ambient.project.pod_restarts_rate
   monitoring_query: sum(rate(ambient_pod_restarts_total{exported_namespace='session-listing'}[5m]))
   monitoring_step: 15
+- name: measurements.ambient.project.token_provision_duration_p50
+  monitoring_query: histogram_quantile(0.5, sum(rate(ambient_token_provision_duration_seconds_bucket{exported_namespace='session-listing'}[5m])) by (le))
+  monitoring_step: 15
 - name: measurements.ambient.project.token_provision_duration_p99
   monitoring_query: histogram_quantile(0.99, sum(rate(ambient_token_provision_duration_seconds_bucket{exported_namespace='session-listing'}[5m])) by (le))
+  monitoring_step: 15
+- name: measurements.ambient.project.image_pull_duration_p50
+  monitoring_query: histogram_quantile(0.5, sum(rate(ambient_image_pull_duration_seconds_bucket{exported_namespace='session-listing'}[5m])) by (le))
   monitoring_step: 15
 - name: measurements.ambient.project.image_pull_duration_p99
   monitoring_query: histogram_quantile(0.99, sum(rate(ambient_image_pull_duration_seconds_bucket{exported_namespace='session-listing'}[5m])) by (le))

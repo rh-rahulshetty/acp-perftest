@@ -422,7 +422,7 @@ def average_benchmark_stats_across_trials(trial_paths):
     averaged = {}
     stat_fields = [
         "min", "max", "mean", "median", "stdev",
-        "percentile25", "percentile75", "percentile90",
+        "percentile25", "percentile50", "percentile75", "percentile90",
         "percentile95", "percentile99", "percentile999",
         "iqr", "range", "samples", "sum",
         "non_zero_mean", "non_zero_median",
@@ -584,6 +584,7 @@ STAT_OPTIONS = [
     {"label": "Min", "value": "min"},
     {"label": "Max", "value": "max"},
     {"label": "P25", "value": "percentile25"},
+    {"label": "P50", "value": "percentile50"},
     {"label": "P75", "value": "percentile75"},
     {"label": "P90", "value": "percentile90"},
     {"label": "P95", "value": "percentile95"},
