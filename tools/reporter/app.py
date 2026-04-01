@@ -944,14 +944,27 @@ def build_custom_dashboard_tab(state):
                 className="mb-3",
             ),
             dbc.Row(
-                dbc.Col(
-                    dbc.Button(
-                        "+ Add Panel",
-                        id="btn-add-panel",
-                        color="primary",
-                        className="me-2",
+                [
+                    dbc.Col(
+                        dbc.Button(
+                            "+ Add Panel",
+                            id="btn-add-panel",
+                            color="primary",
+                            className="me-2",
+                        ),
+                        width="auto",
                     ),
-                ),
+                    dbc.Col(
+                        dbc.Checkbox(
+                            id="chk-separate-plots",
+                            label="Plot each metric separately",
+                            value=False,
+                            className="mt-1",
+                        ),
+                        width="auto",
+                    ),
+                ],
+                align="center",
             ),
             html.Hr(),
             # --- Dynamic panels container ---
@@ -1910,11 +1923,12 @@ def _render_benchmark_table(metrics, scenarios, scenarios_data, stat_field, pane
     State("select-metrics", "value"),
     State("select-scenarios", "value"),
     State("select-stat-field", "value"),
+    State("chk-separate-plots", "value"),
     State("store-panels", "data"),
     State("store-state", "data"),
     prevent_initial_call=True,
 )
-def add_panel(n_clicks, data_source, chart_type, metrics, scenarios, stat_field, panels, state):
+def add_panel(n_clicks, data_source, chart_type, metrics, scenarios, stat_field, separate_plots, panels, state):
     if not metrics or not scenarios:
         return dash.no_update, dash.no_update
 
@@ -1923,15 +1937,27 @@ def add_panel(n_clicks, data_source, chart_type, metrics, scenarios, stat_field,
     if isinstance(scenarios, str):
         scenarios = [scenarios]
 
-    panel_config = {
-        "id": str(uuid.uuid4()),
-        "data_source": data_source,
-        "chart_type": chart_type,
-        "metrics": metrics,
-        "scenarios": scenarios,
-        "stat_field": stat_field,
-    }
-    panels.append(panel_config)
+    if separate_plots and len(metrics) > 1:
+        for metric in metrics:
+            panel_config = {
+                "id": str(uuid.uuid4()),
+                "data_source": data_source,
+                "chart_type": chart_type,
+                "metrics": [metric],
+                "scenarios": scenarios,
+                "stat_field": stat_field,
+            }
+            panels.append(panel_config)
+    else:
+        panel_config = {
+            "id": str(uuid.uuid4()),
+            "data_source": data_source,
+            "chart_type": chart_type,
+            "metrics": metrics,
+            "scenarios": scenarios,
+            "stat_field": stat_field,
+        }
+        panels.append(panel_config)
 
     # Render all panels
     children = _render_all_panels(panels, state)
