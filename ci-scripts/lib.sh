@@ -241,6 +241,7 @@ function save_agenticsessions() {
     #   <output_dir>/
     #     agenticsessions.log        # summary listing
     #     yamls/<session>.yaml       # individual CR definitions
+    #     pods/<pod>.yaml            # runner pod definitions (if available)
     #     logs/<session>.log         # runner pod logs (if available)
     #
     # Usage: save_agenticsessions <namespace> <output_dir>
@@ -248,8 +249,9 @@ function save_agenticsessions() {
     local output_dir="$2"
 
     local yamls_dir="$output_dir/yamls"
+    local pods_dir="$output_dir/pods"
     local logs_dir="$output_dir/logs"
-    mkdir -p "$yamls_dir" "$logs_dir"
+    mkdir -p "$yamls_dir" "$pods_dir" "$logs_dir"
 
     info "Saving agenticsession resources from namespace $namespace to $output_dir …"
 
@@ -265,9 +267,11 @@ function save_agenticsessions() {
         oc get agenticsession "$name" -n "$namespace" -o yaml \
             > "$yamls_dir/${name}.yaml" 2>/dev/null || true
 
-        # Collect runner pod logs (pod name follows <name>-runner convention)
+        # Collect runner pod YAML and logs (pod name follows <name>-runner convention)
         local pod_name="${name}-runner"
         if oc get pod "$pod_name" -n "$namespace" &>/dev/null; then
+            oc get pod "$pod_name" -n "$namespace" -o yaml \
+                > "$pods_dir/${pod_name}.yaml" 2>/dev/null || true
             oc logs "$pod_name" -n "$namespace" --all-containers \
                 > "$logs_dir/${name}.log" 2>/dev/null || true
         fi
