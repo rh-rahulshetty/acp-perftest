@@ -185,6 +185,35 @@ EOF
   fi
 }
 
+function update_end_ts() {
+    # Update end_ts in test-metadata.json with the current timestamp.
+    #
+    # Call from scenario teardown after workload has settled (e.g., after
+    # wait_for_agenticsessions) so the Prometheus query window covers all
+    # late-finishing pods.
+    #
+    # Usage: update_end_ts
+    #   Requires: RUN_ARTIFACTS to be set
+    local metadata_file="${RUN_ARTIFACTS}/test-metadata.json"
+    if [[ ! -f "$metadata_file" ]]; then
+        warning "update_end_ts: test-metadata.json not found at $metadata_file"
+        return 1
+    fi
+
+    local ts
+    ts="$(date -Ins --utc)"
+
+    python3 -c "
+import json
+with open('${metadata_file}') as f:
+    d = json.load(f)
+d['end_ts'] = '${ts}'
+with open('${metadata_file}', 'w') as f:
+    json.dump(d, f, indent=2)
+"
+    info "Updated end_ts: $ts"
+}
+
 function wait_for_agenticsessions() {
     # Wait for all agenticsession pods to be created (Running/Succeeded).
     #

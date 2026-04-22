@@ -221,7 +221,7 @@ EOCR
     MASTER_LABEL="performance-test-pod-name=${LOCUST_TEST_NAME}-master"
 
     info "Waiting for locust master pod to start …"
-    WAIT_TIMEOUT=$(date -d "300 seconds" "+%s")
+    WAIT_TIMEOUT=$(date -d "600 seconds" "+%s")
     while [[ -z "$(kubectl get pods -n "$LOCUST_NAMESPACE" -l "$MASTER_LABEL" -o name 2>/dev/null)" ]]; do
         if [[ "$(date "+%s")" -gt "$WAIT_TIMEOUT" ]]; then
             fatal "Timeout waiting for locust master pod to appear"
@@ -259,17 +259,7 @@ fi
 # ---------------------------------------------------------------------------
 # Record end timestamp
 # ---------------------------------------------------------------------------
-END_TS="$(date -Ins --utc)"
-info "Test ended at $END_TS"
-
-python3 -c "
-import json
-with open('$RUN_ARTIFACTS/test-metadata.json') as f:
-    d = json.load(f)
-d['end_ts'] = '$END_TS'
-with open('$RUN_ARTIFACTS/test-metadata.json', 'w') as f:
-    json.dump(d, f, indent=2)
-"
+update_end_ts
 
 # ---------------------------------------------------------------------------
 # Phase 6: Scenario teardown

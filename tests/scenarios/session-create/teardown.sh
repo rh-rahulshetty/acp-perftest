@@ -7,6 +7,7 @@ PROJECT_NAME="${PROJECT_NAME:-session-create}"
 SESSION_CREATION_TIMEOUT="${SESSION_CREATION_TIMEOUT:-300}"
 
 wait_for_agenticsessions "$PROJECT_NAME" "$SESSION_CREATION_TIMEOUT"
+update_end_ts
 save_agenticsessions "$PROJECT_NAME" "$RUN_ARTIFACTS/agenticsessions"
 
 info "Deleting sessions for project $PROJECT_NAME"
