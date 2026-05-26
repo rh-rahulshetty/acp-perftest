@@ -9,7 +9,7 @@ source "$(dirname "$0")/locust.sh"
 
 # Ambient Code platform repository
 AMBIENT_CODE_GIT="${AMBIENT_CODE_GIT:-https://github.com/ambient-code/platform.git}"
-AMBIENT_CODE_COMMIT="${AMBIENT_CODE_COMMIT:-2b6f6f5a5e0fc81f602ede9c51324cdd1ea0a519}"
+AMBIENT_CODE_COMMIT="${AMBIENT_CODE_COMMIT:-4b2be279fb220820e6faf9dbfb1b02418c124392}"
 
 # Vertex configuration
 ENABLE_VERTEX="${ENABLE_VERTEX:-false}"
